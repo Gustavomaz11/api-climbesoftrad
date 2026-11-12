@@ -71,6 +71,7 @@ describe('Physician email onboarding (e2e)', () => {
     expect(message.text).toContain('Use sua senha atual')
     expect(message.text).not.toContain('Senha inicial:')
     expect(message.text).not.toContain('Senha medica nova 2026!')
+    expect(send.mock.calls[1]![1]).not.toBe(send.mock.calls[0]![1])
     await expect(authenticatedTestRequest(f.server, '91234SE', account.initialPassword)).rejects.toThrow()
     await authenticatedTestRequest(f.server, '91234/SE', 'Senha medica nova 2026!')
   })
@@ -87,6 +88,7 @@ describe('Physician email onboarding (e2e)', () => {
     await f.database.query('UPDATE physician_access_emails SET next_attempt_at=now() WHERE membership_id=$1', [second.membershipId])
     await queue.deliverPending()
     expect(send).toHaveBeenCalledTimes(4)
+    expect(send.mock.calls[3]![1]).toBe(send.mock.calls[2]![1])
     expect((await queue.summaries([second.membershipId])).get(second.membershipId)?.status).toBe('SENT')
   })
 

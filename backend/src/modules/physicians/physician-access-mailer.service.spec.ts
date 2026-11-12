@@ -16,7 +16,7 @@ describe('Physician SMTP delivery', () => {
     ;(nodemailer.createTransport as jest.Mock).mockReturnValue({ sendMail, close })
   })
   it('requires configured delivery and never treats a missing provider as sent', async () => {
-    await expect(create(false).send('doctor@example.test', 'job', content)).rejects.toThrow('SMTP_NOT_CONFIGURED')
+    await expect(create(false).send('doctor@example.test', 'job', content)).rejects.toThrow('EMAIL_NOT_CONFIGURED')
     expect(nodemailer.createTransport).not.toHaveBeenCalled()
   })
   it('requires encrypted SMTP and certificate validation, without logging message content', async () => {

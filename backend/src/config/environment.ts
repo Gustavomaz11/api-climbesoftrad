@@ -4,6 +4,10 @@ import Joi from 'joi'
 export type CookieSameSite = 'strict' | 'lax' | 'none'
 
 const environmentSchema = Joi.object({
+  EMAIL_PROVIDER: Joi.string().valid('SMTP', 'RESEND').default('SMTP'),
+  API_RESEND_KEY: Joi.string().when('EMAIL_PROVIDER', { is: 'RESEND', then: Joi.string().pattern(/^re_[A-Za-z0-9_-]+$/).required(), otherwise: Joi.allow('').default('') }),
+  EMAIL_FROM: Joi.string().email().when('EMAIL_PROVIDER', { is: 'RESEND', then: Joi.required(), otherwise: Joi.allow('').default('') }),
+  EMAIL_REPLY_TO: Joi.string().email().allow('').default(''),
   SMTP_ENABLED: Joi.boolean().default(false),
   SMTP_HOST: Joi.string().hostname().when('SMTP_ENABLED', { is: true, then: Joi.required(), otherwise: Joi.allow('').default('') }),
   SMTP_PORT: Joi.number().port().default(587),

@@ -22,6 +22,11 @@ const productionEnvironment = () => ({
 })
 
 describe('environment security validation', () => {
+  it('requires an API key and a valid sender when Resend is selected', () => {
+    expect(() => validateEnvironment({ ...productionEnvironment(), EMAIL_PROVIDER: 'RESEND' })).toThrow('API_RESEND_KEY')
+    expect(() => validateEnvironment({ ...productionEnvironment(), EMAIL_PROVIDER: 'RESEND', API_RESEND_KEY: 're_synthetic_only', EMAIL_FROM: 'invalid' })).toThrow('EMAIL_FROM')
+    expect(validateEnvironment({ ...productionEnvironment(), EMAIL_PROVIDER: 'RESEND', API_RESEND_KEY: 're_synthetic_only', EMAIL_FROM: 'access@example.com' })).toMatchObject({ EMAIL_PROVIDER: 'RESEND', SMTP_ENABLED: false })
+  })
   it('requires secure cookies in production', () => {
     expect(() =>
       validateEnvironment({ ...productionEnvironment(), COOKIE_SECURE: false }),

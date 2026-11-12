@@ -207,7 +207,7 @@ export class PhysiciansService {
     if (!this.reader.response(membership, context).canManage) throw new ForbiddenException('Acesso não autorizado.')
     if (!membership.active) throw new BadRequestException('O vínculo médico está revogado.')
     const rows = await this.database.query<Array<{ id: string }>>(`WITH queued AS (UPDATE physician_access_emails
-      SET status='PENDING',attempts=0,next_attempt_at=now(),locked_until=NULL,sent_at=NULL
+      SET status='PENDING',attempts=0,next_attempt_at=now(),locked_until=NULL,sent_at=NULL,delivery_key=gen_random_uuid()
       WHERE membership_id=$1 AND status<>'PROCESSING' AND (sent_at IS NULL OR sent_at<now()-interval '1 minute') RETURNING id) SELECT * FROM queued`, [membership.id])
     if (!rows.length) throw new ConflictException('O convite está em processamento, foi enviado recentemente ou não está disponível.')
     this.accessEmails.requestDelivery()

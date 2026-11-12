@@ -1,11 +1,12 @@
 // Verify the publishable Git file list without printing credential values.
 const {execFileSync}=require('node:child_process')
-const {readFileSync,statSync}=require('node:fs')
+const {readFileSync,statSync,existsSync}=require('node:fs')
 const {resolve,extname}=require('node:path')
 const root=resolve(__dirname,'../..')
 const files=execFileSync('git',['ls-files','--cached','--others','--exclude-standard','-z'],{cwd:root,encoding:'utf8'}).split('\0').filter(Boolean)
-const environment=require('dotenv').config({path:resolve(root,'backend/.env'),quiet:true}).parsed||{}
-const secrets=Object.entries(environment).filter(([key,value])=>/PASSWORD|TOKEN|SECRET|API_KEY|CNPJA/.test(key)&&value.length>=10).map(([,value])=>value)
+const environments=['backend/.env','backend/.env.render.production'].filter(file=>existsSync(resolve(root,file)))
+  .map(file=>require('dotenv').parse(readFileSync(resolve(root,file))))
+const secrets=environments.flatMap(environment=>Object.entries(environment).filter(([key,value])=>/PASSWORD|TOKEN|SECRET|API.*KEY|CNPJA/.test(key)&&value.length>=10).map(([,value])=>value))
 const violations=[],largest=[],extensions={}
 for(const file of new Set(files)){
   const absolute=resolve(root,file),entry=statSync(absolute)

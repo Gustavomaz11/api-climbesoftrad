@@ -45,6 +45,7 @@
     "pdf-lib": "^1.17.1",
     "pg": "^8.18.0",
     "reflect-metadata": "^0.2.2",
+    "resend": "^6.38.0",
     "rxjs": "^7.8.2",
     "sharp": "^0.35.5",
     "tesseract.js": "^7.0.0",

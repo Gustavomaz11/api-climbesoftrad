@@ -6,7 +6,7 @@ import { PhysicianAccessMailer } from './physician-access-mailer.service'
 import { physicianInitialPassword } from './physician-initial-password'
 
 export type PhysicianEmailStatus = 'PENDING' | 'PROCESSING' | 'SENT' | 'FAILED' | 'CANCELLED'
-interface PendingEmail { id: string; membership_id: string; initial_access: boolean; attempts: number }
+interface PendingEmail { id: string; delivery_key: string; membership_id: string; initial_access: boolean; attempts: number }
 interface Recipient { email: string; username: string; full_name: string; crm: string; must_change_password: boolean; active: boolean }
 
 @Injectable()
@@ -42,6 +42,7 @@ export class PhysicianAccessEmails implements OnModuleInit, OnModuleDestroy {
   }
 
   requestDelivery() {
+    if (this.config.get('NODE_ENV') === 'test') return
     void this.deliverPending().catch(() => this.logger.error('Não foi possível processar a fila de convites médicos.'))
   }
 
@@ -73,7 +74,7 @@ export class PhysicianAccessEmails implements OnModuleInit, OnModuleDestroy {
       return
     }
     try {
-      await this.mailer.send(recipient.email, job.id, physicianAccessEmail({
+      await this.mailer.send(recipient.email, job.delivery_key, physicianAccessEmail({
         name: recipient.full_name, username: recipient.username,
         initialPassword: job.initial_access && recipient.must_change_password ? physicianInitialPassword(recipient.crm) : null,
         loginUrl: new URL('/login', this.config.getOrThrow<string>('SOURAD_WEB_URL')).href,
