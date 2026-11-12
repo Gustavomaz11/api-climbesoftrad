@@ -5,7 +5,7 @@ services:
     name: api-climbesoftrad
     runtime: node
     region: virginia
-    plan: starter
+    plan: 0.5c-512mb
     rootDir: backend
     buildCommand: npm ci --include=dev && npm run build
     preDeployCommand: npm run migration:run:prod

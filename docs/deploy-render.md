@@ -15,7 +15,7 @@ Publicar `backend` como Web Service Node 24 e criar PostgreSQL 17 na mesma regi�
 - `NODE_ENV=production`, Node `24.11.1`; deixar `PORT` a cargo do Render.
 - Usar a Internal Database URL do novo PostgreSQL em `DATABASE_URL`.
 
-O modelo `render.yaml` usa API Starter e banco `0.1c-256mb` com 1 GB. Conferir valores no painel antes de criar. O banco não expõe conexão pública no modelo; a API se conecta pela rede privada. Não aplicar o Blueprint sobre recursos existentes com o mesmo nome sem conferir se pertencem a esta aplicação.
+O modelo `render.yaml` usa API `0.5c-512mb` e banco `0.1c-256mb` com 1 GB. Conferir valores no painel antes de criar. O banco não expõe conexão pública no modelo; a API se conecta pela rede privada. Não aplicar o Blueprint sobre recursos existentes com o mesmo nome sem conferir se pertencem a esta aplicação.
 
 ## Segredos e URLs
 
