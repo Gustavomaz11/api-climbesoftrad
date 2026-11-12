@@ -62,6 +62,13 @@ export class PhysiciansController {
     return this.physicians.revoke(id, request.auth)
   }
 
+  @Post(':id/access-email')
+  @RequirePermissions('physicians.create')
+  @ApiOperation({ summary: 'Reenvia o convite médico sem alterar sua senha' })
+  resendAccessEmail(@Param('id', ParseUUIDPipe) id: string, @Req() request: CompanyAuthenticatedRequest) {
+    return this.physicians.resendAccessEmail(id, request.auth)
+  }
+
   @Patch(':id/reactivate')
   @RequirePermissions('physicians.status.manage')
   @ApiOperation({ summary: 'Reativa o acesso de um médico' })

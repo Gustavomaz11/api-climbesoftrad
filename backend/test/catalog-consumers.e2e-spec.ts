@@ -1,6 +1,7 @@
 import type { Server } from 'node:http'
 import { createOperationalDocumentsFixture, responseBody } from './operational-documents.fixture'
 import { authenticatedTestRequest } from './authenticated-test-request'
+import { syntheticSignature } from './synthetic-signature'
 import type { ContrastProtocolEntity } from '../src/database/entities/contrast-protocol.entity'
 import type { ExamPriceRuleEntity } from '../src/database/entities/exam-price-rule.entity'
 import { CatalogConsumers1860000000000 } from '../src/database/migrations/1860000000000-CatalogConsumers'
@@ -45,7 +46,7 @@ describe('Canonical catalog consumers: protocols, prescriptions and prices (e2e)
     physician = responseBody<typeof physician>(
       await fixture
         .api('post', '/physicians')
-        .send({
+        .send({ email: 'doctor-crmconsumer2026@integration.test',
           name: 'Médico revisão sintética',
           crm: 'CRM CONSUMER 2026',
           specialtyId: specialties[0]!.id,
@@ -62,6 +63,8 @@ describe('Canonical catalog consumers: protocols, prescriptions and prices (e2e)
       'CRM CONSUMER 2026',
       physician.initialPassword,
     )
+    await doctorApi('post', '/physicians/me/signature')
+      .attach('signature', await syntheticSignature(), { filename: 'signature.png', contentType: 'image/png' }).expect(200)
     exam = await fixture.exam({ examTypeId: type.id })
   }, 30000)
   afterAll(async () => {

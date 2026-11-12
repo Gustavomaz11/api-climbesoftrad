@@ -12,6 +12,8 @@ import { AdminAccountProvisioner } from '../src/modules/auth/admin-account.provi
 import { OperationalAuditService } from '../src/modules/companies/operational-audit.service'
 import { R2ObjectStorage } from '../src/modules/exams/r2-object-storage.service'
 import { resetCompanyTestDatabase } from './reset-company-test-database'
+import { ClamAvScanner } from '../src/modules/file-validation/clamav-scanner.service'
+import { syntheticSignature } from './synthetic-signature'
 
 const bodyAs = <T>(response: Response) => response.body as T
 interface Provisioned {
@@ -147,6 +149,8 @@ describe('Companies and unit isolation (e2e)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(R2ObjectStorage)
       .useValue(storage)
+      .overrideProvider(ClamAvScanner)
+      .useValue({ scan: () => Promise.resolve('CLEAN') })
       .compile()
     app = moduleRef.createNestApplication()
     app.use(cookieParser())
@@ -440,7 +444,7 @@ describe('Companies and unit isolation (e2e)', () => {
     if (!specialty) throw new Error('Especialidade de teste ausente.')
     const physician = bodyAs<Provisioned>(
       await api('post', '/physicians')
-        .send({
+        .send({ email: 'doctor-teste5678@integration.test',
           name: 'Médica de Teste',
           crm: 'TESTE-5678',
           specialtyId: specialty.id,
@@ -456,6 +460,8 @@ describe('Companies and unit isolation (e2e)', () => {
     if (!identity) throw new Error('Identidade médica de teste ausente.')
     const token = await login(identity.username, physician.initialPassword ?? '')
     await changeInitialPassword(token, physician.initialPassword ?? '')
+    await api('post', '/physicians/me/signature', token)
+      .attach('signature', await syntheticSignature(), { filename: 'signature.png', contentType: 'image/png' }).expect(200)
     const signed = bodyAs<{ presentation: object }>(
       await api('put', '/exams/' + examA + '/prescription/sign', token)
         .send({ content })
@@ -471,7 +477,7 @@ describe('Companies and unit isolation (e2e)', () => {
     expect(fetched.presentation).toMatchObject({ headerText: 'Unidade A' })
     const linked = bodyAs<Provisioned>(
       await api('post', '/physicians', root, companyB)
-        .send({
+        .send({ email: 'doctor-teste5678@integration.test',
           name: 'Nome que não altera identidade',
           crm: 'TESTE-5678',
           specialtyId: specialty.id,

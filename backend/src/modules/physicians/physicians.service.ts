@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
@@ -23,6 +24,7 @@ import { OperationalAuditService } from '../companies/operational-audit.service'
 import type { CreatePhysicianDto } from './dto/create-physician.dto'
 import { PhysicianRegistryService } from './physician-registry.service'
 import { physicianInitialPassword } from './physician-initial-password'
+import { PhysicianAccessEmails } from './physician-access-emails.service'
 
 @Injectable()
 export class PhysiciansService {
@@ -33,6 +35,7 @@ export class PhysiciansService {
     private readonly memberships: CompanyMembershipService,
     private readonly audit: OperationalAuditService,
     private readonly registry: PhysicianRegistryService,
+    private readonly accessEmails: PhysicianAccessEmails,
   ) {}
 
   async list(context: CompanyAccessContext) {
@@ -46,13 +49,15 @@ export class PhysiciansService {
       relations: { specialty: true },
       order: { name: 'ASC' },
     })
-    return physicians.map((physician) =>
-      this.response(
+    const invitations = await this.accessEmails.summaries(memberships.map(item => item.id))
+    return physicians.map((physician) => {
+      const membership = memberships.find(item => item.userId === physician.userId)!
+      return { ...this.response(
         physician,
-        memberships.find((membership) => membership.userId === physician.userId)!,
+        membership,
         context,
-      ),
-    )
+      ), accessEmail: invitations.get(membership.id) ?? null }
+    })
   }
 
   async create(dto: CreatePhysicianDto, context: CompanyAccessContext) {
@@ -60,7 +65,7 @@ export class PhysiciansService {
     const initialPassword = physicianInitialPassword(crm)
     const passwordHash = await this.crypto.hashPassword(initialPassword)
     try {
-      return await this.database.transaction(async (manager) => {
+      const result = await this.database.transaction(async (manager) => {
         const profile = dto.registryLookupId ? await this.registry.consume(dto.registryLookupId, context, manager) : null
         if (profile && crm !== `${profile.registrations[0]!.crm}/${profile.registrations[0]!.uf}`)
           throw new BadRequestException('O CRM deve corresponder à consulta realizada.')
@@ -85,6 +90,8 @@ export class PhysiciansService {
         })
         const existingIdentity = Boolean(physician)
         if (physician) {
+          if (physician.user.email.toLowerCase() !== dto.email.toLowerCase())
+            throw new ConflictException('O e-mail deve corresponder ao cadastro existente deste médico.')
           if (
             await manager.getRepository(CompanyMembershipEntity).existsBy({
               companyId: context.companyId,
@@ -96,8 +103,8 @@ export class PhysiciansService {
           const users = manager.getRepository(AuthUserEntity)
           const user = await users.save(
             users.create({
-              email: 'medico.' + this.crypto.sha256Hex(crm).slice(0, 24) + '@internal.local',
-              username: crm,
+              email: dto.email,
+              username: /^\d+\/[A-Z]{2}$/.test(crm) ? initialPassword : crm,
               fullName: profile?.name ?? dto.name.trim().replace(/\s+/g, ' '),
               passwordHash,
               status: 'ACTIVE',
@@ -175,11 +182,14 @@ export class PhysiciansService {
           ...this.response(physician, membership, context),
           existingIdentity,
           initialPassword: existingIdentity ? null : initialPassword,
+          accessEmail: await this.accessEmails.enqueue(manager, membership.id, !existingIdentity),
         }
       })
+      this.accessEmails.requestDelivery()
+      return result
     } catch (error: unknown) {
       if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
-        throw new ConflictException('Médico já cadastrado ou vinculado. Recarregue.')
+        throw new ConflictException('CRM ou e-mail já cadastrado. Confira o cadastro existente.')
       }
       throw error
     }
@@ -187,6 +197,21 @@ export class PhysiciansService {
 
   revoke(id: string, context: CompanyAccessContext) {
     return this.setActive(id, false, context)
+  }
+
+  async resendAccessEmail(id: string, context: CompanyAccessContext) {
+    const membership = await this.reader.query(context)
+      .innerJoin(PhysicianEntity, 'physician', 'physician.user_id = membership.user_id')
+      .andWhere('physician.id = :id', { id }).getOne()
+    if (!membership) throw new NotFoundException('Médico não encontrado.')
+    if (!this.reader.response(membership, context).canManage) throw new ForbiddenException('Acesso não autorizado.')
+    if (!membership.active) throw new BadRequestException('O vínculo médico está revogado.')
+    const rows = await this.database.query<Array<{ id: string }>>(`WITH queued AS (UPDATE physician_access_emails
+      SET status='PENDING',attempts=0,next_attempt_at=now(),locked_until=NULL,sent_at=NULL
+      WHERE membership_id=$1 AND status<>'PROCESSING' AND (sent_at IS NULL OR sent_at<now()-interval '1 minute') RETURNING id) SELECT * FROM queued`, [membership.id])
+    if (!rows.length) throw new ConflictException('O convite está em processamento, foi enviado recentemente ou não está disponível.')
+    this.accessEmails.requestDelivery()
+    return { status: 'PENDING' as const, configured: this.accessEmails.configured }
   }
   reactivate(id: string, context: CompanyAccessContext) {
     return this.setActive(id, true, context)
@@ -218,7 +243,8 @@ export class PhysiciansService {
       'Alteração de acesso médico nesta empresa',
     )
     const updated = await this.reader.get(membership.id, context)
-    return this.response(physician, updated, context)
+    const invitations = await this.accessEmails.summaries([membership.id])
+    return { ...this.response(physician, updated, context), accessEmail: invitations.get(membership.id) ?? null }
   }
 
   private response(
@@ -234,6 +260,8 @@ export class PhysiciansService {
       specialty: physician.specialty.name,
       specialtyId: physician.specialtyId,
       crm: physician.crm,
+      username: membership.user.username,
+      email: membership.user.email.endsWith('@internal.local') ? null : membership.user.email,
       contactPhone: physician.contactPhone,
       registryProfile: physician.registryProfile,
       enabledStates: physician.registryProfile?.registrations.filter(item => item.enabled).map(item => item.uf) ?? [],

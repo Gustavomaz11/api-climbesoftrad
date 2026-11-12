@@ -10,7 +10,7 @@ import {
 } from 'class-validator'
 
 export class LoginDto {
-  @ApiProperty({ example: 'usuario@hospital.com.br ou CRM/SP 123456' })
+  @ApiProperty({ example: 'usuario@hospital.com.br ou 7626SE' })
   @IsString()
   @Length(1, 254)
   @MaxLength(254)

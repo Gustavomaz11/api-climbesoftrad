@@ -8,7 +8,7 @@ describe('Required physician signature onboarding', () => {
   let doctor: Awaited<ReturnType<typeof authenticatedTestRequest>>, initialPassword: string
   beforeAll(async () => {
     f = await createOperationalDocumentsFixture()
-    const account = responseBody<{ initialPassword: string }>(await f.api('post', '/physicians').send({ name: 'Médico de teste', crm: '13579/SE', allUnits: true }).expect(201))
+    const account = responseBody<{ initialPassword: string }>(await f.api('post', '/physicians').send({ email: 'doctor-13579se@integration.test', name: 'Médico de teste', crm: '13579/SE', allUnits: true }).expect(201))
     initialPassword = account.initialPassword
     doctor = await authenticatedTestRequest(f.server, '13579/SE', initialPassword)
   }, 45000)
@@ -35,7 +35,7 @@ describe('Required physician signature onboarding', () => {
   it('keeps the signature private to its physician and rejects administrative impersonation', async () => {
     await f.api('get', '/physicians/me/signature').expect(403)
     await f.api('post', '/physicians/me/signature').attach('signature', await syntheticSignature(), { filename: 'signature.png', contentType: 'image/png' }).expect(403)
-    const second = responseBody<{ initialPassword: string }>(await f.api('post', '/physicians').send({ name: 'Outro médico de teste', crm: '24680/SE', allUnits: true }).expect(201))
+    const second = responseBody<{ initialPassword: string }>(await f.api('post', '/physicians').send({ email: 'doctor-24680se@integration.test', name: 'Outro médico de teste', crm: '24680/SE', allUnits: true }).expect(201))
     const other = await authenticatedTestRequest(f.server, '24680/SE', second.initialPassword)
     await other('put', '/auth/password').send({ currentPassword: second.initialPassword, newPassword: 'Outra senha de assinatura 2026!' }).expect(200)
     expect(responseBody<{ signature: unknown }>(await other('get', '/physicians/me/signature').expect(200)).signature).toBeNull()

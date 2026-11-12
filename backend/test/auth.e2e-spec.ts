@@ -282,7 +282,7 @@ describe('Auth API (e2e)', () => {
     const physician = await request(server)
       .post('/api/v1/physicians')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({
+      .send({ email: 'doctor-crm@integration.test',
         name: 'Dra. Ana Oliveira',
         specialtyId: specialty?.id,
         crm,

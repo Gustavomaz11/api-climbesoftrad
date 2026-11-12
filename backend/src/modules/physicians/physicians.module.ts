@@ -16,6 +16,8 @@ import { ExamPhysicianEligibilityService } from './exam-physician-eligibility.se
 import { FileValidationModule } from '../file-validation/file-validation.module'
 import { PhysicianSignatureController } from './physician-signature.controller'
 import { PhysicianSignatureService } from './physician-signature.service'
+import { PhysicianAccessEmails } from './physician-access-emails.service'
+import { PhysicianAccessMailer } from './physician-access-mailer.service'
 
 @Module({
   imports: [
@@ -27,6 +29,8 @@ import { PhysicianSignatureService } from './physician-signature.service'
   ],
   controllers: [PhysicianSignatureController, PhysiciansController, PhysicianQualificationsController],
   providers: [
+    PhysicianAccessEmails,
+    PhysicianAccessMailer,
     PhysiciansService,
     PhysicianSignatureService,
     PhysicianRegistryService,

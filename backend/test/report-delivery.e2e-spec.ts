@@ -15,7 +15,7 @@ describe('Doctor completion and explicit return to the origin hospital', () => {
   const content = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Laudo sintético concluído para teste de entrega.' }] }] }
   beforeAll(async () => {
     f = await createWorkflowFixture()
-    const physician = responseBody<{ initialPassword: string }>(await f.api('post', '/physicians').send({ name: 'Médico sintético', crm: '87654/SE', allUnits: true }).expect(201))
+    const physician = responseBody<{ initialPassword: string }>(await f.api('post', '/physicians').send({ email: 'doctor-87654se@integration.test', name: 'Médico sintético', crm: '87654/SE', allUnits: true }).expect(201))
     doctor = await authenticatedTestRequest(f.server, '87654/SE', physician.initialPassword)
     await doctor('put', '/auth/password').send({ currentPassword: physician.initialPassword, newPassword: 'Senha sintética de laudos 2026!' }).expect(200)
     signatureId = responseBody<{ signature: { id: string } }>(await doctor('post', '/physicians/me/signature').attach('signature', await syntheticSignature(), { filename: 'signature.png', contentType: 'image/png' }).expect(200)).signature.id

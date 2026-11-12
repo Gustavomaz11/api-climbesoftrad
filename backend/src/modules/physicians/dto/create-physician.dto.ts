@@ -1,8 +1,13 @@
 import { Transform } from 'class-transformer'
 import { MembershipUnitsDto } from '../../companies/dto/membership.dto'
-import { IsOptional, IsString, IsUUID, Length, Matches } from 'class-validator'
+import { IsEmail, IsOptional, IsString, IsUUID, Length, Matches } from 'class-validator'
 
 export class CreatePhysicianDto extends MembershipUnitsDto {
+  @Transform(({ value }: { value: unknown }) => typeof value === 'string' ? value.trim().toLowerCase() : value)
+  @IsEmail()
+  @Length(3, 254)
+  email: string
+
   override allUnits = true
   @IsOptional() @IsUUID() registryLookupId?: string
   @IsOptional() @IsString() @Length(0, 30) @Matches(/^[+\d() .-]*$/) contactPhone?: string

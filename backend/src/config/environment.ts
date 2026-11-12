@@ -4,6 +4,13 @@ import Joi from 'joi'
 export type CookieSameSite = 'strict' | 'lax' | 'none'
 
 const environmentSchema = Joi.object({
+  SMTP_ENABLED: Joi.boolean().default(false),
+  SMTP_HOST: Joi.string().hostname().when('SMTP_ENABLED', { is: true, then: Joi.required(), otherwise: Joi.allow('').default('') }),
+  SMTP_PORT: Joi.number().port().default(587),
+  SMTP_SECURE: Joi.boolean().default(false),
+  SMTP_USER: Joi.string().when('SMTP_ENABLED', { is: true, then: Joi.required(), otherwise: Joi.allow('').default('') }),
+  SMTP_PASSWORD: Joi.string().when('SMTP_ENABLED', { is: true, then: Joi.required(), otherwise: Joi.allow('').default('') }),
+  SMTP_FROM: Joi.string().email().when('SMTP_ENABLED', { is: true, then: Joi.required(), otherwise: Joi.allow('').default('') }),
   CNPJA: Joi.string().allow('').default(''),
   ROUTER_PUBLIC_API_URL: Joi.string().uri({ scheme: ['https'] }).allow('').default(''),
   ROUTER_TLS_PORT: Joi.number().port().default(3443),

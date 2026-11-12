@@ -8,7 +8,9 @@ const environment=require('dotenv').config({path:resolve(root,'backend/.env'),qu
 const secrets=Object.entries(environment).filter(([key,value])=>/PASSWORD|TOKEN|SECRET|API_KEY|CNPJA/.test(key)&&value.length>=10).map(([,value])=>value)
 const violations=[],largest=[],extensions={}
 for(const file of new Set(files)){
-  const absolute=resolve(root,file),size=statSync(absolute).size
+  const absolute=resolve(root,file),entry=statSync(absolute)
+  if(!entry.isFile())continue
+  const size=entry.size
   const extension=extname(file).toLowerCase();extensions[extension]=(extensions[extension]||0)+1
   largest.push({file,bytes:size})
   if(/(^|\/)(\.env(?:\..*)?|secrets)(\/|$)/i.test(file)&&!file.endsWith('.example'))violations.push({file,reason:'credential path'})

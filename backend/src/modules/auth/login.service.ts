@@ -2,7 +2,8 @@ import { CompanyScopeService } from '../companies/company-scope.service'
 import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { InjectRepository } from '@nestjs/typeorm'
-import { DataSource, type Repository } from 'typeorm'
+import { DataSource, In, type Repository } from 'typeorm'
+import { loginUsernames } from './login-identifiers'
 import { AuthUserEntity } from '../../database/entities/auth-user.entity'
 import { OAuthAuthorizationCodeEntity } from '../../database/entities/oauth-authorization-code.entity'
 import type { AuthorizationCodeResult, RequestMetadata } from './auth.contracts'
@@ -35,7 +36,7 @@ export class LoginService {
 
     const identifier = dto.email.trim()
     const user = await this.userRepository.findOne({
-      where: [{ email: identifier }, { username: identifier }],
+      where: [{ email: identifier }, { username: In(loginUsernames(identifier)) }],
       relations: { accessRole: true },
     })
     const passwordHash = user?.passwordHash ?? (await this.dummyPasswordHash)

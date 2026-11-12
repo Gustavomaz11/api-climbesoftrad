@@ -21,7 +21,7 @@ describe('Physician qualifications consume the canonical exam catalog (e2e)', ()
     physician = responseBody<typeof physician>(
       await fixture
         .api('post', '/physicians')
-        .send({
+        .send({ email: 'doctor-crmtest2026@integration.test',
           name: 'Médica Habilitação',
           crm: 'CRM TEST 2026',
           specialtyId: specialties[0]!.id,
