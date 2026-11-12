@@ -1,0 +1,79 @@
+# API and database only. Secrets and JWT files are configured in Render.
+# Paid resources: review the current dashboard estimate before creating them.
+services:
+  - type: web
+    name: api-climbesoftrad
+    runtime: node
+    region: virginia
+    plan: starter
+    rootDir: backend
+    buildCommand: npm ci --include=dev && npm run build
+    preDeployCommand: npm run migration:run:prod
+    startCommand: npm start
+    healthCheckPath: /api/v1/health
+    autoDeployTrigger: off
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 24.11.1
+      - key: DATABASE_URL
+        fromDatabase:
+          name: climbesoftrad-db
+          property: connectionString
+      - key: COOKIE_SECURE
+        value: 'true'
+      - key: COOKIE_SAME_SITE
+        value: lax
+      - key: TRUST_PROXY_HOPS
+        value: '1'
+      - key: PUBLIC_REGISTRATION_ENABLED
+        value: 'false'
+      - key: SWAGGER_ENABLED
+        value: 'false'
+      - key: GEMINI_RESEARCH_ENABLED
+        value: 'false'
+      - key: OAUTH_CLIENT_ID
+        value: crm-web
+      - key: JWT_PRIVATE_KEY_PATH
+        value: /etc/secrets/jwt_private.pem
+      - key: JWT_PUBLIC_KEY_PATH
+        value: /etc/secrets/jwt_public.pem
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: PUBLIC_API_URL
+        sync: false
+      - key: ROUTER_PUBLIC_API_URL
+        sync: false
+      - key: SOURAD_WEB_URL
+        sync: false
+      - key: JWT_ISSUER
+        sync: false
+      - key: JWT_AUDIENCE
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: CLOUDFLARE_R2_ENDPOINT
+        sync: false
+      - key: CLOUDFLARE_R2_BUCKET
+        sync: false
+      - key: CLOUDFLARE_R2_ACCESS_KEY
+        sync: false
+      - key: CLOUDFLARE_R2_SECRET_KEY
+        sync: false
+      - key: CNPJA
+        sync: false
+      - key: DIRECTD_CFM_TOKEN
+        sync: false
+databases:
+  - name: climbesoftrad-db
+    region: virginia
+    plan: 0.1c-256mb
+    diskSizeGB: 1
+    postgresMajorVersion: '17'
+    databaseName: crm
+    user: crm
+    storageAutoscalingEnabled: false
+    ipAllowList: []

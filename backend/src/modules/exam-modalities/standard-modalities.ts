@@ -1,0 +1,27 @@
+// DICOM PS3.3 2026d C.7.3.1.1.1, including retired acquisition codes for imports.
+// https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.7.3.html
+export const standardModalities = Object.entries({
+  ANN:'Anotação',AR:'Autorrefratometria',ASMT:'Avaliação de conteúdo',AU:'Áudio',BDUS:'Densitometria óssea por ultrassom',
+  BI:'Imagem biomagnética',BMD:'Densitometria óssea por raios X',CFM:'Microscopia confocal',CR:'Radiografia computadorizada',
+  CT:'Tomografia computadorizada',CTPROTOCOL:'Protocolo de tomografia',DMS:'Dermatoscopia',DG:'Diafanografia',DOC:'Documento',
+  DX:'Radiografia digital',ECG:'Eletrocardiograma',EEG:'Eletroencefalograma',EMG:'Eletromiografia',EOG:'Eletrooculografia',
+  EPS:'Eletrofisiologia cardíaca',ES:'Endoscopia',FID:'Marcadores fiduciais',GM:'Microscopia geral',HC:'Cópia física',HD:'Hemodinâmica',
+  IO:'Radiografia intraoral',IOL:'Dados de lente intraocular',IVOCT:'Tomografia de coerência óptica intravascular',IVUS:'Ultrassom intravascular',
+  KER:'Ceratometria',KO:'Seleção de objetos principais',LEN:'Lensometria',LS:'Varredura de superfície a laser',MG:'Mamografia',
+  MR:'Ressonância magnética',M3D:'Modelo para fabricação 3D',NM:'Medicina nuclear',OAM:'Biometria axial oftalmológica',
+  OCT:'Tomografia de coerência óptica não oftalmológica',OP:'Fotografia oftalmológica',OPM:'Mapeamento oftalmológico',
+  OPT:'Tomografia oftalmológica',OPTBSV:'Análise volumétrica B-scan oftalmológica',OPTENF:'Tomografia oftalmológica en face',
+  OPV:'Campo visual oftalmológico',OSS:'Varredura óptica de superfície',OT:'Outros',PA:'Imagem fotoacústica',PLAN:'Planejamento',
+  POS:'Sensor de posição',PR:'Estado de apresentação',PT:'Tomografia por emissão de pósitrons (PET)',PX:'Radiografia panorâmica',
+  REG:'Registro de imagens',RESP:'Respiração',RF:'Radioscopia / fluoroscopia',RG:'Radiografia convencional',RTDOSE:'Dose de radioterapia',
+  RTIMAGE:'Imagem de radioterapia',RTINTENT:'Intenção de radioterapia',RTPLAN:'Plano de radioterapia',RTRAD:'Radiação de radioterapia',
+  RTRECORD:'Registro de tratamento radioterápico',RTSEGANN:'Anotação de segmento de radioterapia',RTSTRUCT:'Estruturas de radioterapia',
+  RWV:'Mapa de valores reais',SEG:'Segmentação',SM:'Microscopia de lâmina',SMR:'Relação estereométrica',SR:'Relatório estruturado',
+  SRF:'Refração subjetiva',STAIN:'Coloração automatizada de lâminas',TEXTUREMAP:'Mapa de textura',TG:'Termografia',US:'Ultrassonografia',
+  VA:'Acuidade visual',XA:'Angiografia por raios X',XAPROTOCOL:'Protocolo de angiografia',XC:'Fotografia por câmera externa',
+  AS:'Angioscopia (legado)',CD:'Doppler colorido (legado)',CF:'Cinefluorografia (legado)',CP:'Colposcopia (legado)',CS:'Cistoscopia (legado)',
+  DD:'Doppler duplex (legado)',DF:'Fluoroscopia digital (legado)',DM:'Microscopia digital (legado)',DS:'Angiografia por subtração digital (legado)',
+  EC:'Ecocardiografia (legado)',FA:'Angiografia fluoresceínica (legado)',FS:'Fundoscopia (legado)',LP:'Laparoscopia (legado)',
+  MA:'Angiorressonância (legado)',MS:'Espectroscopia por ressonância (legado)',OPR:'Refração oftalmológica (legado)',
+  ST:'Tomografia por emissão de fóton único - SPECT (legado)',VF:'Videofluorografia (legado)',
+}).map(([code, name]) => ({ code, name }))

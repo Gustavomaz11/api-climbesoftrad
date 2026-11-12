@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.env.local
+coverage/
+test/.tmp/
+secrets/*.pem
+secrets/router-local.key
+secrets/router-local.crt
+*.tsbuildinfo

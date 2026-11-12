@@ -1,0 +1,92 @@
+{
+  "name": "crm-hospitalar-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "API de autenticação do CRM hospitalar",
+  "license": "UNLICENSED",
+  "scripts": {
+    "build": "nest build",
+    "start": "node --use-system-ca dist/main.js",
+    "verify:dicom": "node --use-system-ca scripts/verify-local-dicom.cjs",
+    "start:dev": "nest start --watch",
+    "lint": "eslint \"{src,test}/**/*.ts\"",
+    "lint:fix": "eslint \"{src,test}/**/*.ts\" --fix",
+    "typecheck": "tsc --noEmit",
+    "test": "jest --runInBand",
+    "test:e2e": "cross-env NODE_ENV=test node scripts/ensure-test-database.mjs && cross-env NODE_ENV=test npm run migration:run && jest --config test/jest-e2e.json --runInBand",
+    "keys:generate": "node scripts/generate-jwt-keys.mjs",
+    "migration:run": "typeorm-ts-node-commonjs -d src/database/data-source.ts migration:run",
+    "migration:revert": "typeorm-ts-node-commonjs -d src/database/data-source.ts migration:revert",
+    "migration:run:prod": "typeorm -d dist/database/data-source.js migration:run"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1116.0",
+    "@aws-sdk/s3-request-presigner": "^3.1116.0",
+    "@nestjs/common": "^11.1.17",
+    "@nestjs/config": "^4.0.3",
+    "@nestjs/core": "^11.1.17",
+    "@nestjs/jwt": "^11.0.2",
+    "@nestjs/platform-express": "^11.1.17",
+    "@nestjs/swagger": "^11.2.6",
+    "@nestjs/throttler": "^6.5.0",
+    "@nestjs/typeorm": "^11.0.0",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "archiver": "^7.0.1",
+    "argon2": "^0.44.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.3",
+    "cookie-parser": "^1.4.7",
+    "csv-parse": "^7.0.3",
+    "dicom-parser": "^1.8.21",
+    "dotenv": "^17.4.2",
+    "helmet": "^8.1.0",
+    "joi": "^18.0.2",
+    "pdf-lib": "^1.17.1",
+    "pg": "^8.18.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "sharp": "^0.35.5",
+    "tesseract.js": "^7.0.0",
+    "typeorm": "^0.3.28"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.3",
+    "@nestjs/cli": "^11.0.16",
+    "@nestjs/testing": "^11.1.17",
+    "@types/archiver": "^7.0.0",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/express": "^5.0.6",
+    "@types/jest": "^30.0.0",
+    "@types/multer": "^2.2.0",
+    "@types/node": "^24.10.0",
+    "@types/supertest": "^6.0.3",
+    "cross-env": "^10.1.0",
+    "eslint": "^9.39.3",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^16.5.0",
+    "jest": "^30.2.0",
+    "prettier": "^3.7.4",
+    "supertest": "^7.2.2",
+    "ts-jest": "^29.4.6",
+    "ts-node": "^10.9.2",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.56.1"
+  },
+  "jest": {
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": "ts-jest"
+    },
+    "collectCoverageFrom": [
+      "**/*.(t|j)s"
+    ],
+    "coverageDirectory": "../coverage",
+    "testEnvironment": "node"
+  }
+}
