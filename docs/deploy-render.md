@@ -34,3 +34,19 @@ Antes do primeiro envio, executar `node backend/scripts/audit-deploy-source.cjs`
 Em banco vazio, migrations criam a estrutura e os cadastros canônicos; o bootstrap cria o administrador configurado. Migração de dados existentes exige decisão explícita, backup e restauração próprios; não é realizada apenas por executar migrations.
 
 Após o deploy, verificar `/api/v1/health` e autenticação PKCE com administrador, além dos endpoints de unidades, médicos e modalidades. Não criar exames fictícios no banco de produção sem necessidade de homologação acordada. Registrar o commit publicado e a URL efetiva após confirmar a saúde do serviço.
+
+## Publicação executada em 12/11/2026
+
+- API: `https://api-climbesoftrad.onrender.com/api/v1`.
+- Saúde: `https://api-climbesoftrad.onrender.com/api/v1/health`.
+- Serviço Render: `srv-dbqsi1dg1s2s73f8srs0`.
+- Primeiro deploy: `dep-dbqsi1tg1s2s73f8stj0`, commit de aplicação `79256e06ffbec4d746836cf7848778149764b8c3`.
+- PostgreSQL: `climbesoftrad-db`, ID `dpg-dbqsdretlv9c73f1bsp0-a`, PostgreSQL 17, Virginia, banco/usuário `crm`, 1 GB.
+- Recursos aprovados pelo responsável: API US$ 7/mês e PostgreSQL US$ 6,30/mês (compute e 1 GB), sujeitos a extras de uso do provedor.
+- Banco novo para teste por escolha do responsável. Nenhuma restauração dos dados locais foi feita.
+- Validados por HTTPS: saúde com banco disponível, login administrativo PKCE, acesso autenticado e listas vazias de unidades, médicos e exames; requisição sem credencial recusada; cookie Secure/HttpOnly e HSTS; logout 204.
+- Todas as conexões públicas do PostgreSQL foram bloqueadas. A API usa a conexão interna.
+- Arquivo de ambiente da instalação: `backend/.env.render.production`, ignorado pelo Git. Contém a senha administrativa nova do ambiente de teste; não copiar para issues, commits ou documentação pública.
+- Os fronts continuam separados desta publicação. A origem HTTPS da própria API está autorizada temporariamente para a verificação administrativa; cadastrar as origens efetivas quando os fronts forem publicados.
+
+Scripts operacionais adicionados: `prepare-render-env.cjs` prepara um arquivo local de ambiente a partir da configuração existente e da conexão exportada do painel; `smoke-render-api.cjs` valida o serviço sem imprimir credenciais. Dados de conexão e relatório de verificação ficam em `tmp/render-deploy`, fora do Git.
