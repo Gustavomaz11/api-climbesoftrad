@@ -7,6 +7,7 @@ const roleDefinitions = [
   ['HOSPITAL', 'Hospital — envio de exames', 'Prepara estudos da unidade e envia à SouRad.', false],
   ['ADMINISTRATOR', 'Administrador', 'Administração desta empresa.', true],
   ['DOCTOR', 'Médico', 'Atividades clínicas nas unidades autorizadas.', false],
+  ['SENIOR_DOCTOR', 'Médico sênior', 'Atividades médicas e reassinatura justificada de outros médicos.', false],
   ['RECEPTION', 'Recepção', 'Preparação e acompanhamento de exames.', false],
   ['TECHNICIAN', 'Técnico', 'Operação técnica nas unidades autorizadas.', false],
   ['READ_ONLY', 'Somente leitura', 'Consulta nas unidades autorizadas.', false],

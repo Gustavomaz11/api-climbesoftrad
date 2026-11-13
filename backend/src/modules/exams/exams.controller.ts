@@ -5,6 +5,7 @@ import {
   Delete,
   ForbiddenException,
   Get,
+  Headers,
   Param,
   ParseUUIDPipe,
   Post,
@@ -223,7 +224,7 @@ export class ExamsController {
     @Param('clientId', new ParseUUIDPipe()) clientId: string,
     @Req() request: CompanyAuthenticatedRequest,
   ) {
-    return this.reportPresence.release(examId, request.auth, clientId)
+    return this.reports.close(examId, {clientId}, request.auth)
   }
 
   @Post(':id/report/images')
@@ -235,8 +236,9 @@ export class ExamsController {
     @Param('id', new ParseUUIDPipe()) examId: string,
     @UploadedFile() file: Express.Multer.File | undefined,
     @Req() request: CompanyAuthenticatedRequest,
+    @Headers('x-report-client-id') clientId: string | undefined,
   ) {
     if (!file) throw new BadRequestException('Selecione uma imagem para anexar.')
-    return this.reports.uploadImage(examId, file, request.auth)
+    return this.reports.uploadImage(examId, file, request.auth, clientId)
   }
 }

@@ -6,6 +6,7 @@ import { initialCompanyId } from '../src/database/migrations/schema/legacy-compa
 import { OperationalAuditService } from '../src/modules/companies/operational-audit.service'
 import { syntheticSignature } from './synthetic-signature'
 import { getStorageToken } from '@nestjs/throttler'
+import { ReportSessionStore } from '../src/modules/exam-workflow/report-session-store.service'
 
 describe('Doctor completion and explicit return to the origin hospital', () => {
   let f: Awaited<ReturnType<typeof createWorkflowFixture>>
@@ -14,6 +15,8 @@ describe('Doctor completion and explicit return to the origin hospital', () => {
   let signatureId: string
   let secondDoctor: Awaited<ReturnType<typeof authenticatedTestRequest>>
   let doctorId: string
+  let secondSignatureId:string
+  const clientId=randomUUID()
   const content = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Laudo sintético concluído para teste de entrega.' }] }] }
   beforeAll(async () => {
     f = await createWorkflowFixture()
@@ -25,7 +28,7 @@ describe('Doctor completion and explicit return to the origin hospital', () => {
     const second = responseBody<{ initialPassword: string }>(await f.api('post', '/physicians').send({ email: 'second-doctor@integration.test', name: 'Segundo médico sintético', crm: '87655/SE', allUnits: true }).expect(201))
     secondDoctor = await authenticatedTestRequest(f.server, '87655/SE', second.initialPassword)
     await secondDoctor('put', '/auth/password').send({ currentPassword: second.initialPassword, newPassword: 'Outra senha sintética de laudos 2026!' }).expect(200)
-    await secondDoctor('post', '/physicians/me/signature').attach('signature', await syntheticSignature(), { filename: 'signature.png', contentType: 'image/png' }).expect(200)
+    secondSignatureId=responseBody<{signature:{id:string}}>(await secondDoctor('post', '/physicians/me/signature').attach('signature', await syntheticSignature(), { filename: 'signature.png', contentType: 'image/png' }).expect(200)).signature.id
     const roles = responseBody<Array<{ id: string; code: string }>>(await f.api('get', '/access-control/roles').expect(200))
     const account = responseBody<{ initialPassword: string }>(await f.api('post', '/company-memberships').send({ email: 'results@hospital.example.test', fullName: 'Hospital sintético', roleId: roles.find(r => r.code === 'HOSPITAL')!.id, allUnits: false, unitIds: [f.unit] }).expect(201))
     hospital = await authenticatedTestRequest(f.server, 'results@hospital.example.test', account.initialPassword)
@@ -42,33 +45,35 @@ describe('Doctor completion and explicit return to the origin hospital', () => {
     const exam = await f.exam()
     await f.prepare(exam.id)
     await doctor('post', `/exams/${exam.id}/workflow/start`).send({ expectedVersion: (await f.current(exam.id)).exam.workflowVersion, reason: 'Médico iniciou a elaboração' }).expect(201)
+    await doctor('put', `/exams/${exam.id}/report/presence/${clientId}`).expect(200)
     await f.database.query(`INSERT INTO hospital_intakes(company_id,unit_id,study_uid,identity_hash,status,exam_id,recipient_company_id,recipient_unit_id)
       VALUES($1,$2,$3,$4,'SUBMITTED',$5,$1,$6)`, [initialCompanyId, originUnit ?? f.unit, 'qa.' + randomUUID(), randomUUID(), exam.id, f.unit])
     return exam.id
   }
   const finalize = async (id: string) => {
-    const saved = responseBody<{ contentHash: string }>(await doctor('put', `/exams/${id}/report`).send({ content }).expect(200))
+    await doctor('put', `/exams/${id}/report/presence/${clientId}`).expect(200)
+    const saved = responseBody<{ contentHash: string }>(await doctor('put', `/exams/${id}/report`).send({ clientId,content }).expect(200))
     const version = responseBody<{ workflowVersion: number }>(await doctor('get', `/exams/${id}/workflow-status`).expect(200)).workflowVersion
-    return doctor('post', `/exams/${id}/report/finalize`).send({ signatureId, expectedVersion: version, contentHash: saved.contentHash })
+    return doctor('post', `/exams/${id}/report/finalize`).send({ clientId,signatureId, expectedVersion: version, contentHash: saved.contentHash })
   }
   it('rejects nonmedical completion and reports whose elaboration has not started', async () => {
     const id = (await f.exam()).id
-    await f.api('post', `/exams/${id}/report/finalize`).send({ signatureId, expectedVersion: 1, contentHash: 'a'.repeat(64) }).expect(403)
-    await doctor('put', `/exams/${id}/report`).send({ content }).expect(409)
-    await doctor('post', `/exams/${id}/report/finalize`).send({ signatureId, expectedVersion: 1, contentHash: 'a'.repeat(64) }).expect(409)
+    await f.api('post', `/exams/${id}/report/finalize`).send({ clientId,signatureId, expectedVersion: 1, contentHash: 'a'.repeat(64) }).expect(403)
+    await doctor('put', `/exams/${id}/report`).send({ clientId,content }).expect(409)
+    await doctor('post', `/exams/${id}/report/finalize`).send({ clientId,signatureId, expectedVersion: 1, contentHash: 'a'.repeat(64) }).expect(409)
   })
   it('finalizes exactly once, freezes the report and exposes it only after explicit delivery', async () => {
     const id = await prepared()
-    const saved = responseBody<{ contentHash: string }>(await doctor('put', `/exams/${id}/report`).send({ content }).expect(200))
-    const dto = { signatureId, expectedVersion: (await f.current(id)).exam.workflowVersion, contentHash: saved.contentHash }
+    const saved = responseBody<{ contentHash: string }>(await doctor('put', `/exams/${id}/report`).send({ clientId,content }).expect(200))
+    const dto = { clientId,signatureId, expectedVersion: (await f.current(id)).exam.workflowVersion, contentHash: saved.contentHash }
     const responses = await Promise.all([doctor('post', `/exams/${id}/report/finalize`).send(dto), doctor('post', `/exams/${id}/report/finalize`).send(dto)])
     expect(responses.map(r => r.status)).toEqual([201, 201])
     const completed = responseBody<{ id: string; sentAt: string | null; physician: { crm: string } }>(responses[0])
     expect(responseBody<{ id: string }>(responses[1]).id).toBe(completed.id)
     expect(completed.sentAt).toBeNull()
     expect(completed.physician.crm).toBe('87654/SE')
-    expect((await f.current(id)).exam.workflowState).toBe('TYPED')
-    await doctor('put', `/exams/${id}/report`).send({ content }).expect(409)
+    expect((await f.current(id)).exam.workflowState).toBe('SIGNED')
+    await doctor('put', `/exams/${id}/report`).send({ clientId,content }).expect(409)
     await f.act(id, 'reopen', 409)
     await hospital('get', `/exams/${id}/report`).expect(403)
     await hospital('get', `/hospital/results/${completed.id}`).expect(404)
@@ -84,17 +89,17 @@ describe('Doctor completion and explicit return to the origin hospital', () => {
   })
   it('rejects empty or stale documents and returns no completion on failure', async () => {
     const id = await prepared()
-    await doctor('put', `/exams/${id}/report`).send({ content: { type: 'doc', content: [{ type: 'paragraph' }] } }).expect(200)
+    await doctor('put', `/exams/${id}/report`).send({ clientId,content: { type: 'doc', content: [{ type: 'paragraph' }] } }).expect(200)
     const version = (await f.current(id)).exam.workflowVersion
-    await doctor('post', `/exams/${id}/report/finalize`).send({ signatureId, expectedVersion: version, contentHash: '0'.repeat(64) }).expect(409)
-    const empty = responseBody<{ contentHash: string }>(await doctor('put', `/exams/${id}/report`).send({ content: { type: 'doc', content: [] } }).expect(200))
-    await doctor('post', `/exams/${id}/report/finalize`).send({ signatureId, expectedVersion: version, contentHash: empty.contentHash }).expect(400)
+    await doctor('post', `/exams/${id}/report/finalize`).send({ clientId,signatureId, expectedVersion: version, contentHash: '0'.repeat(64) }).expect(409)
+    const empty = responseBody<{ contentHash: string }>(await doctor('put', `/exams/${id}/report`).send({ clientId,content: { type: 'doc', content: [] } }).expect(200))
+    await doctor('post', `/exams/${id}/report/finalize`).send({ clientId,signatureId, expectedVersion: version, contentHash: empty.contentHash }).expect(400)
     expect((await doctor('get', `/exams/${id}/report/completion`).expect(200)).body).toEqual({ completion: null })
   })
   it('requires explicit signature selection and preserves its image after a subsequent replacement', async () => {
     const id = await prepared()
-    const saved = responseBody<{ contentHash: string }>(await doctor('put', `/exams/${id}/report`).send({ content }).expect(200))
-    const dto = { expectedVersion: (await f.current(id)).exam.workflowVersion, contentHash: saved.contentHash }
+    const saved = responseBody<{ contentHash: string }>(await doctor('put', `/exams/${id}/report`).send({ clientId,content }).expect(200))
+    const dto = { clientId,expectedVersion: (await f.current(id)).exam.workflowVersion, contentHash: saved.contentHash }
     await doctor('post', `/exams/${id}/report/finalize`).send(dto).expect(400)
     await doctor('post', `/exams/${id}/report/finalize`).send({ ...dto, signatureId: randomUUID() }).expect(409)
     const finished = responseBody<{ id: string; signature: { id: string; dataUrl: string; sha256: string } }>(await finalize(id).then(response => { expect(response.status).toBe(201); return response }))
@@ -114,12 +119,16 @@ describe('Doctor completion and explicit return to the origin hospital', () => {
     const completed = responseBody<{ id: string }>(response)
     await f.api('post', `/exams/${id}/report/send`).send({ completionId: completed.id }).expect(201)
     await hospital('get', `/hospital/results/${completed.id}`).expect(404)
+    await hospital('get', `/report-versions/${completed.id}/history`).expect(404)
+    await hospital('post', `/report-versions/${completed.id}/review`).send({reason:'Tentativa em laudo de outro hospital'}).expect(404)
+    await hospital('post', `/report-versions/${completed.id}/activity`).send({activity:'EXPORT_REQUESTED'}).expect(404)
     const list = responseBody<Array<{ id: string }>>(await hospital('get', '/hospital/results').expect(200))
     expect(list.some(item => item.id === completed.id)).toBe(false)
   })
   it('rolls completion back when transactional auditing fails', async () => {
     const id = await prepared()
-    const failure = jest.spyOn(f.app.get(OperationalAuditService), 'record').mockRejectedValueOnce(new Error('SYNTHETIC_AUDIT_FAILURE'))
+    const audit=f.app.get(OperationalAuditService),record=audit.record.bind(audit)
+    const failure = jest.spyOn(audit,'record').mockImplementation((context,event,manager)=>event.action==='REPORT_FINALIZED'?Promise.reject(new Error('SYNTHETIC_AUDIT_FAILURE')):record(context,event,manager))
     try { expect((await finalize(id)).status).toBe(500) } finally { failure.mockRestore() }
     expect((await f.current(id)).exam.workflowState).toBe('IN_PROGRESS')
     expect((await doctor('get', `/exams/${id}/report/completion`).expect(200)).body).toEqual({ completion: null })
@@ -182,8 +191,8 @@ describe('Doctor completion and explicit return to the origin hospital', () => {
     expect(await queueIds(secondDoctor, 'MINE')).not.toContain(id)
     expect((await f.current(id)).exam.reportingUserId).toBe(doctorId)
     expect((await f.database.query<Array<{ count: string }>>('SELECT count(*) FROM exam_report_presences WHERE exam_id=$1', [id]))[0]!.count).toBe('0')
-    await secondDoctor('put', `/exams/${id}/report`).send({ content }).expect(403)
-    await secondDoctor('post', `/exams/${id}/report/finalize`).send({ signatureId, expectedVersion: 2, contentHash: 'a'.repeat(64) }).expect(403)
+    await secondDoctor('put', `/exams/${id}/report`).send({ clientId,content }).expect(403)
+    await secondDoctor('post', `/exams/${id}/report/finalize`).send({ clientId,signatureId, expectedVersion: 2, contentHash: 'a'.repeat(64) }).expect(403)
     await f.api('get', '/exams?assignment=MINE').expect(403)
     await f.act(id, 'reopen')
     expect(await queueIds(doctor, 'MINE')).not.toContain(id)
@@ -216,5 +225,107 @@ describe('Doctor completion and explicit return to the origin hospital', () => {
     await f.api('post', `/exams/${id}/report/send`).send({ completionId: completed.id }).expect(201)
     expect(await queueIds(doctor, 'MINE')).not.toContain(id)
     expect((await f.current(id)).exam.reportingUserId).toBe(doctorId)
+  })
+  const revisionDto=async(id:string,completionId:string,reason='Correção justificada de informação do laudo')=>({completionId,expectedVersion:(await f.current(id)).exam.workflowVersion,reason})
+  const corrected={type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'Texto sintético corrigido e conferido pelo médico.'}]}]}
+
+  it('saves before forced exit, preserves Digitado, requires a takeover reason and fences out old clients',async()=>{
+    const id=await prepared()
+    await doctor('put',`/exams/${id}/report`).send({clientId,content}).expect(200)
+    await doctor('put',`/exams/${id}/report/presence/${randomUUID()}`).expect(409)
+    await secondDoctor('get',`/exams/${id}/report`).expect(409)
+    await f.api('post',`/exams/${id}/report/session/force-release`).send({reason:'Transferência solicitada pela administração'}).expect(201)
+    expect(responseBody<{releaseRequested:boolean}>(await doctor('put',`/exams/${id}/report/presence/${clientId}`).expect(200)).releaseRequested).toBe(true)
+    await doctor('post',`/exams/${id}/report/session/close`).send({clientId,content:corrected}).expect(201)
+    expect((await f.current(id)).exam.workflowState).toBe('TYPED')
+    expect(responseBody<{content:unknown}>(await doctor('get',`/exams/${id}/report`).expect(200)).content).toEqual(corrected)
+    await secondDoctor('get',`/exams/${id}/report`).expect(409)
+    await doctor('put',`/exams/${id}/report`).send({clientId,content}).expect(409)
+    const version=(await f.current(id)).exam.workflowVersion
+    await secondDoctor('post',`/exams/${id}/workflow/start`).send({expectedVersion:version,reason:'Continuidade do laudo'}).expect(400)
+    await secondDoctor('post',`/exams/${id}/workflow/start`).send({expectedVersion:version,reason:'Continuidade do laudo',takeoverReason:'Continuidade autorizada após troca de plantão'}).expect(201)
+    const otherClient=randomUUID()
+    await secondDoctor('put',`/exams/${id}/report/presence/${otherClient}`).expect(200)
+    await doctor('put',`/exams/${id}/report`).send({clientId,content}).expect(403)
+    await secondDoctor('put',`/exams/${id}/report`).send({clientId:otherClient,content:corrected}).expect(200)
+    await secondDoctor('post',`/exams/${id}/report/session/close`).send({clientId:otherClient}).expect(201)
+  })
+
+  it('rolls back both draft changes and session release if auditing fails; expired sessions cannot save',async()=>{
+    const id=await prepared()
+    await doctor('put',`/exams/${id}/report`).send({clientId,content}).expect(200)
+    const failure=jest.spyOn(f.app.get(OperationalAuditService),'record').mockRejectedValueOnce(new Error('SYNTHETIC_CLOSE_AUDIT_FAILURE'))
+    try{await doctor('post',`/exams/${id}/report/session/close`).send({clientId,content:corrected}).expect(500)}finally{failure.mockRestore()}
+    expect((await f.current(id)).exam.workflowState).toBe('IN_PROGRESS')
+    expect(responseBody<{content:unknown}>(await doctor('get',`/exams/${id}/report`).expect(200)).content).toEqual(content)
+    await f.database.query("UPDATE exam_report_sessions SET expires_at=now()-interval '1 second' WHERE exam_id=$1",[id])
+    await f.app.get(ReportSessionStore).expire()
+    expect((await f.current(id)).exam.workflowState).toBe('TYPED')
+    await doctor('put',`/exams/${id}/report`).send({clientId,content:corrected}).expect(409)
+  })
+
+  it('requires reasons and medical authority for revision, preserves signed versions and delivers only the latest',async()=>{
+    const id=await prepared()
+    const first=responseBody<{id:string;version:number;signature:unknown}>(await finalize(id))
+    const [original]=await f.database.query<Array<{snapshot:unknown}>>('SELECT snapshot FROM exam_report_completions WHERE id=$1',[first.id])
+    await f.api('post',`/exams/${id}/report/send`).send({completionId:first.id}).expect(201)
+    await doctor('post',`/report-versions/${first.id}/review`).send({reason:'Rever descrição solicitada pelo hospital'}).expect(403)
+    await hospital('post',`/report-versions/${first.id}/review`).send({reason:'Rever descrição solicitada pelo hospital'}).expect(201)
+    expect((await f.current(id)).exam.workflowState).toBe('REVIEW')
+    await secondDoctor('post',`/exams/${id}/report/revise`).send(await revisionDto(id,first.id)).expect(403)
+    await doctor('post',`/exams/${id}/report/revise`).send(await revisionDto(id,first.id,'          ')).expect(400)
+    const [second]=await f.database.query<Array<{user_id:string}>>('SELECT user_id FROM physicians WHERE crm=$1',['87655/SE'])
+    await f.api('post',`/exams/${id}/report/authorize`).send({completionId:first.id,physicianUserId:second!.user_id,reason:'Gerência autoriza médico substituto para esta versão'}).expect(201)
+    // The original signer makes version 2; the grant for version 1 must not authorize version 2.
+    await doctor('post',`/exams/${id}/report/revise`).send(await revisionDto(id,first.id)).expect(201)
+    await doctor('put',`/exams/${id}/report/presence/${clientId}`).expect(200)
+    const saved=responseBody<{contentHash:string}>(await doctor('put',`/exams/${id}/report`).send({clientId,content:corrected}).expect(200))
+    const secondVersion=responseBody<{id:string;version:number}>(await doctor('post',`/exams/${id}/report/finalize`).send({clientId,signatureId,expectedVersion:(await f.current(id)).exam.workflowVersion,contentHash:saved.contentHash}).expect(201))
+    expect(secondVersion.version).toBe(2)
+    expect((await f.current(id)).exam.workflowState).toBe('RESIGNED')
+    await secondDoctor('post',`/exams/${id}/report/revise`).send(await revisionDto(id,secondVersion.id)).expect(403)
+    expect((await f.database.query<Array<{snapshot:unknown}>>('SELECT snapshot FROM exam_report_completions WHERE id=$1',[first.id]))[0]!.snapshot).toEqual(original!.snapshot)
+    await expect(f.database.query('DELETE FROM exam_report_completions WHERE id=$1',[first.id])).rejects.toThrow()
+    await expect(f.database.query("UPDATE exam_report_completions SET snapshot='{}' WHERE id=$1",[first.id])).rejects.toThrow()
+    const before=responseBody<Array<{examId:string;id:string}>>(await hospital('get','/hospital/results').expect(200))
+    expect(before.find(row=>row.examId===id)?.id).toBe(first.id)
+    await f.api('post',`/exams/${id}/report/send`).send({completionId:first.id}).expect(409)
+    await f.api('post',`/exams/${id}/report/send`).send({completionId:secondVersion.id}).expect(201)
+    expect(responseBody<Array<{examId:string;id:string}>>(await hospital('get','/hospital/results').expect(200)).find(row=>row.examId===id)?.id).toBe(secondVersion.id)
+    const historical=responseBody<{signature:unknown}>(await hospital('get',`/report-versions/${first.id}`).expect(200))
+    expect(historical.signature).toEqual(first.signature)
+    await hospital('post',`/report-versions/${first.id}/activity`).send({activity:'PRINT_REQUESTED'}).expect(201)
+    await hospital('post',`/report-versions/${secondVersion.id}/activity`).send({activity:'EXPORT_REQUESTED'}).expect(201)
+    const events=await f.database.query<Array<{action:string}>>("SELECT action FROM operational_events WHERE resource_id=$1 AND action IN ('REPORT_PRINT_REQUESTED','REPORT_EXPORT_REQUESTED')",[id])
+    expect(events.map(e=>e.action)).toEqual(expect.arrayContaining(['REPORT_PRINT_REQUESTED','REPORT_EXPORT_REQUESTED']))
+  },30000)
+
+  it('allows the manager-approved substitute to sign with their own image and revalidates without changing the signed version',async()=>{
+    const id=await prepared(),first=responseBody<{id:string}>(await finalize(id))
+    await f.api('post',`/exams/${id}/report/send`).send({completionId:first.id}).expect(201)
+    const [second]=await f.database.query<Array<{user_id:string}>>('SELECT user_id FROM physicians WHERE crm=$1',['87655/SE'])
+    await f.api('post',`/exams/${id}/report/authorize`).send({completionId:first.id,physicianUserId:second!.user_id,reason:'Médico substituto autorizado pela gerência'}).expect(201)
+    await secondDoctor('post',`/exams/${id}/report/revise`).send(await revisionDto(id,first.id)).expect(201)
+    const client=randomUUID()
+    await secondDoctor('put',`/exams/${id}/report/presence/${client}`).expect(200)
+    const saved=responseBody<{contentHash:string}>(await secondDoctor('put',`/exams/${id}/report`).send({clientId:client,content:corrected}).expect(200))
+    const revised=responseBody<{id:string;version:number;physician:{crm:string};signature:{id:string}}>(await secondDoctor('post',`/exams/${id}/report/finalize`).send({clientId:client,signatureId:secondSignatureId,expectedVersion:(await f.current(id)).exam.workflowVersion,contentHash:saved.contentHash}).expect(201))
+    expect(revised.version).toBe(2);expect(revised.signature.id).toBe(secondSignatureId);expect(revised.physician.crm).toBe('87655/SE')
+    await f.api('post',`/exams/${id}/report/send`).send({completionId:revised.id}).expect(201)
+    await hospital('post',`/report-versions/${revised.id}/review`).send({reason:'Solicitação de nova conferência sem alteração'}).expect(201)
+    const [before]=await f.database.query<Array<{snapshot:unknown;content_hash:string}>>('SELECT snapshot,content_hash FROM exam_report_completions WHERE id=$1',[revised.id])
+    await secondDoctor('post',`/exams/${id}/report/revalidate`).send(await revisionDto(id,revised.id,'Revisto pelo médico e mantido integralmente sem alteração')).expect(201)
+    expect((await f.current(id)).exam.workflowState).toBe('REVALIDATED')
+    expect(await f.database.query('SELECT snapshot,content_hash FROM exam_report_completions WHERE id=$1',[revised.id])).toEqual([before])
+    expect((await f.database.query<Array<{count:string}>>('SELECT count(*) FROM exam_report_completions WHERE exam_id=$1',[id]))[0]!.count).toBe('2')
+  },30000)
+  it('allows a physician with the senior permission to start a justified correction of another physician report',async()=>{
+    const id=await prepared(),first=responseBody<{id:string}>(await finalize(id))
+    const [second]=await f.database.query<Array<{user_id:string}>>('SELECT user_id FROM physicians WHERE crm=$1',['87655/SE'])
+    const [membership]=await f.database.query<Array<{id:string;access_role_id:string}>>('SELECT id,access_role_id FROM company_memberships WHERE user_id=$1 AND company_id=$2',[second!.user_id,initialCompanyId])
+    const [senior]=await f.database.query<Array<{id:string}>>("SELECT id FROM access_roles WHERE company_id=$1 AND code='SENIOR_DOCTOR'",[initialCompanyId])
+    await f.database.query('UPDATE company_memberships SET access_role_id=$2 WHERE id=$1',[membership!.id,senior!.id])
+    try{await secondDoctor('post',`/exams/${id}/report/revise`).send(await revisionDto(id,first.id,'Revisão justificada pelo médico sênior')).expect(201)}
+    finally{await f.database.query('UPDATE company_memberships SET access_role_id=$2 WHERE id=$1',[membership!.id,membership!.access_role_id])}
   })
 })

@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, PayloadTooLargeException } from '@nestjs/common'
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common'
 import { createHash, randomUUID } from 'node:crypto'
 import type { ExamEntity } from '../../database/entities/exam.entity'
 import type { CompanyAccessContext } from '../companies/company-context.contracts'
@@ -10,6 +10,12 @@ import { R2ExamReportStorage } from './r2-exam-report-storage.service'
 import { assertUploadedFileSignature } from './uploaded-file-security'
 import { WorkflowStoreService } from '../exam-workflow/workflow-store.service'
 import { assertReportEditing } from './report-assignment.policy'
+import { DataSource, type EntityManager } from 'typeorm'
+import { ReportSessionStore } from '../exam-workflow/report-session-store.service'
+import { ReportDraftStore } from './report-draft-store.service'
+import { assertRevisionAuthorized, requireReportingDoctor } from './report-revision.policy'
+import type { CompletedReportRow } from './report-completion.contracts'
+import type { ReportCloseDto } from './report-lifecycle.contracts'
 
 export interface ReportNode {
   type?: unknown
@@ -18,15 +24,6 @@ export interface ReportNode {
   [key: string]: unknown
 }
 
-interface StoredReport {
-  version: 1
-  examId: string
-  content: ReportNode
-  updatedAt: string
-  updatedByUserId: string
-}
-
-const initialContent: ReportNode = { type: 'doc', content: [{ type: 'paragraph' }] }
 const imageExtensions: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
@@ -42,65 +39,63 @@ export class ExamReportsService {
     private readonly audit: OperationalAuditService,
     private readonly presentation: CompanyPresentationService,
     private readonly workflow: WorkflowStoreService,
+    private readonly db:DataSource,
+    private readonly sessions:ReportSessionStore,
+    private readonly drafts:ReportDraftStore,
   ) {}
 
   async get(examId: string, context: CompanyAccessContext) {
     const exam = await this.access.require(examId, context)
+    const session=await this.sessions.current(examId)
+    if(session && session.user_id!==context.userId) throw new ConflictException('O laudário está aberto por outro médico. Aguarde ou solicite encerramento à administração.')
+    if(context.role==='DOCTOR' && exam.workflowState==='TYPED' && exam.reportingUserId && exam.reportingUserId!==context.userId)
+      throw new ConflictException('Justifique a continuidade e assuma o laudo Digitado antes de abrir seu conteúdo.')
     const presentation = (
       await this.presentation.current(context.companyId, exam.unitId, context.userId)
     ).effective
-    const body = await this.storage.read(examId)
-    if (!body)
-      return { exam: this.summary(exam), content: initialContent, updatedAt: null, presentation }
-    const report = JSON.parse(body) as StoredReport
+    const report = await this.drafts.get(examId,context)
     return {
       exam: this.summary(exam),
       content: await this.hydrate(examId, report.content),
-      updatedAt: report.updatedAt,
+      updatedAt: report.has_content ? report.updated_at : null,
       presentation,
     }
   }
 
   async save(examId: string, dto: SaveExamReportDto, context: CompanyAccessContext) {
-    return this.workflow.writable(examId, context, async (exam, manager) => {
-      const [completed] = await manager.query<unknown[]>('SELECT id FROM exam_report_completions WHERE exam_id=$1', [examId])
-      if (completed) throw new ConflictException('Laudo finalizado: edição indisponível.')
-      assertReportEditing(exam, context)
-      const serialized = JSON.stringify(dto.content)
-      if (Buffer.byteLength(serialized, 'utf8') > 2_000_000)
-        throw new PayloadTooLargeException('Laudo excede o limite permitido.')
-      const updatedAt = new Date().toISOString()
-      const report: StoredReport = {
-        version: 1,
-        examId,
-        content: dto.content,
-        updatedAt,
-        updatedByUserId: context.userId,
-      }
-      await this.audit.external(
-        context,
-        {
-          action: 'REPORT_SAVED',
-          resourceType: 'exam',
-          resourceId: examId,
-          unitId: exam.unitId,
-          metadata: {
-            storageKey: `reports/${examId}/report.json`,
-            payloadHash: createHash('sha256').update(JSON.stringify(report)).digest('hex'),
-            contentHash: createHash('sha256').update(serialized).digest('hex'),
-          },
-        },
-        () => this.storage.write(examId, JSON.stringify(report)),
-      )
-      return { updatedAt, contentHash: createHash('sha256').update(serialized).digest('hex') }
+    return this.workflow.writable(examId, context, (exam, manager) => this.saveDraft(exam,dto,context,manager))
+  }
+  private async saveDraft(exam:ExamEntity,dto:SaveExamReportDto,context:CompanyAccessContext,manager:EntityManager) {
+    await this.assertDraftWritable(exam,context,dto.clientId,manager)
+    const saved=await this.drafts.save(exam.id,dto.content,context.userId,manager)
+    await this.audit.record(context,{action:'REPORT_SAVED',resourceType:'exam',resourceId:exam.id,unitId:exam.unitId,
+      metadata:{contentHash:saved.content_hash,baseCompletionId:saved.base_completion_id}},manager)
+    return {updatedAt:saved.updated_at,contentHash:saved.content_hash}
+  }
+  private async assertDraftWritable(exam:ExamEntity,context:CompanyAccessContext,clientId:string|undefined,manager:EntityManager) {
+    assertReportEditing(exam,context)
+    await requireReportingDoctor(exam.unitId,context,manager)
+    await this.sessions.assertOwner(exam.id,context,clientId,manager)
+    const [completed]=await manager.query<CompletedReportRow[]>('SELECT * FROM exam_report_completions WHERE exam_id=$1 ORDER BY version DESC LIMIT 1',[exam.id])
+    const draft=await this.drafts.get(exam.id,context,manager)
+    if(completed) {
+      if(draft.base_completion_id!==completed.id) throw new ConflictException('Laudo assinado: abra uma correção autorizada.')
+      await assertRevisionAuthorized(completed,context,manager)
+    }
+  }
+  async close(examId:string,dto:ReportCloseDto,context:CompanyAccessContext) {
+    return this.db.transaction(async manager=>{
+      const exam=await this.workflow.exam(examId,context,manager,true)
+      const session=await this.sessions.current(examId,manager)
+      if(!session || session.client_id!==dto.clientId || session.user_id!==context.userId) return {active:false}
+      if(dto.content && exam.workflowState==='IN_PROGRESS') await this.saveDraft(exam,{clientId:dto.clientId,content:dto.content},context,manager)
+      return this.sessions.close(exam,context,dto.clientId,manager)
     })
   }
 
-  async uploadImage(examId: string, file: Express.Multer.File, context: CompanyAccessContext) {
+  async uploadImage(examId: string, file: Express.Multer.File, context: CompanyAccessContext, clientId?:string) {
     return this.workflow.writable(examId, context, async (exam, manager) => {
-      assertReportEditing(exam, context)
-      const [completed] = await manager.query<unknown[]>('SELECT id FROM exam_report_completions WHERE exam_id=$1', [examId])
-      if (completed) throw new ConflictException('Laudo finalizado: edição indisponível.')
+      await this.assertDraftWritable(exam,context,clientId,manager)
       const extension = imageExtensions[file.mimetype]
       if (!extension) throw new BadRequestException('Formato de imagem não permitido.')
       assertUploadedFileSignature(file)

@@ -51,6 +51,7 @@ const bootstrap = async () => {
       'X-Requested-With',
       'X-Company-Id',
       'X-Unit-Id',
+        'X-Report-Client-Id',
     ],
     exposedHeaders: [
       'Retry-After',

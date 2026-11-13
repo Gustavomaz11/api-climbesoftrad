@@ -245,7 +245,7 @@ describe('Companies and unit isolation (e2e)', () => {
       await api('get', '/exams/' + examB + suffix).expect(404)
     for (const suffix of ['/report', '/prescription', '/prescription/sign'])
       await api('put', '/exams/' + examB + suffix)
-        .send({ content })
+        .send({ content,...(suffix==='/report'?{clientId:randomUUID()}:{}) })
         .expect(404)
     await api('put', '/exams/' + examB + '/report/presence/' + randomUUID()).expect(404)
     await api('post', '/exams/' + examB + '/comments')
@@ -283,8 +283,10 @@ describe('Companies and unit isolation (e2e)', () => {
   it('revoga unidade e empresa sem invalidar sessão nem histórico das demais', async () => {
     const clientA = randomUUID()
     const clientA2 = randomUUID()
-    await api('put', '/exams/' + examA + '/report/presence/' + clientA, sharedToken).expect(200)
-    await api('put', '/exams/' + examA2 + '/report/presence/' + clientA2, sharedToken).expect(200)
+    await api('put', '/exams/' + examA + '/report/presence/' + clientA, sharedToken).expect(403)
+    await api('put', '/exams/' + examA2 + '/report/presence/' + clientA2, sharedToken).expect(403)
+    // Existing presence records must still be cleaned up when a membership is revoked.
+    await database.query('INSERT INTO exam_report_presences(exam_id,user_id,client_id,last_seen_at) VALUES($1,$2,$3,now()),($4,$2,$5,now())',[examA,shared.userId,clientA,examA2,clientA2])
     await api('put', '/company-memberships/' + shared.id + '/units')
       .send({ allUnits: false, unitIds: [unitA] })
       .expect(200)

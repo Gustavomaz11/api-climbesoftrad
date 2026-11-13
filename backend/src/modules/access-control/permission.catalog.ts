@@ -1,4 +1,8 @@
 export const permissionCatalog = [
+  { code: 'reports.review.request', group: 'Laudos', name: 'Solicitar reavaliação de laudo' },
+  { code: 'reports.review.authorize', group: 'Laudos', name: 'Autorizar outro médico a reassinar um laudo específico' },
+  { code: 'reports.resign.other', group: 'Laudos', name: 'Reassinar laudos de outros médicos como médico sênior' },
+  { code: 'reports.session.force', group: 'Laudos', name: 'Solicitar encerramento forçado do laudário' },
   { code: 'reports.finalize', group: 'Laudos', name: 'Finalizar laudo como médico' },
   { code: 'reports.deliver', group: 'Laudos', name: 'Enviar laudo finalizado ao hospital' },
   { code: 'hospital.results.view', group: 'Hospital', name: 'Consultar laudos recebidos do ClimbeSoftRad' },
@@ -144,7 +148,7 @@ export type PermissionCode = (typeof permissionCatalog)[number]['code']
 export const allPermissionCodes = permissionCatalog.map((permission) => permission.code)
 
 export const defaultRolePermissions: Record<string, PermissionCode[]> = {
-  HOSPITAL: ['hospital.intake.view', 'hospital.intake.submit', 'hospital.results.view', 'dicom.import', 'companies.view'],
+  HOSPITAL: ['reports.review.request', 'hospital.intake.view', 'hospital.intake.submit', 'hospital.results.view', 'dicom.import', 'companies.view'],
   ADMINISTRATOR: allPermissionCodes,
   DOCTOR: [
     'reports.finalize', 'reports.deliver',
@@ -222,3 +226,4 @@ export const defaultRolePermissions: Record<string, PermissionCode[]> = {
     'units.view',
   ],
 }
+defaultRolePermissions.SENIOR_DOCTOR=[...defaultRolePermissions.DOCTOR!, 'reports.resign.other']

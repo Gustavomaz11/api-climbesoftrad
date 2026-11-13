@@ -7,6 +7,9 @@ import type { VersionedWorkflowDto } from './workflow.dto'
 import { WorkflowStoreService } from './workflow-store.service'
 import { assertHospitalOriginReceived } from '../exams/report-origin.policy'
 import { assertReportOwner } from '../exams/report-assignment.policy'
+import { assertRevisionAuthorized, reportReason, requireReportingDoctor } from '../exams/report-revision.policy'
+import type { CompletedReportRow } from '../exams/report-completion.contracts'
+import { ReportSessionStore } from './report-session-store.service'
 
 @Injectable()
 export class ExamWorkflowService {
@@ -14,15 +17,21 @@ export class ExamWorkflowService {
     private readonly database: DataSource,
     private readonly store: WorkflowStoreService,
     private readonly checklist: PreparationChecklistService,
+    private readonly sessions: ReportSessionStore,
   ) {}
   async status(id: string, context: CompanyAccessContext) {
     const exam = await this.store.exam(id, context)
+    const session=await this.sessions.current(id)
+    const [holder]=session ? await this.database.query<Array<{name:string}>>('SELECT full_name AS name FROM auth_users WHERE id=$1',[session.user_id]) : []
     return {
       workflowState: exam.workflowState,
       workflowVersion: exam.workflowVersion,
       archivedAt: exam.archivedAt,
       reportingUserId: exam.reportingUserId,
       reportingStartedAt: exam.reportingStartedAt,
+      editingUserId:session?.user_id??null,
+      editingUserName:holder?.name??null,
+      releaseRequested:Boolean(session?.release_requested_at),
     }
   }
   async get(id: string, context: CompanyAccessContext) {
@@ -65,15 +74,20 @@ export class ExamWorkflowService {
     this.store.permission(context, rule.permission)
     return this.store.run(id, dto.expectedVersion, context, async (exam, manager) => {
       this.store.assertMutable(exam)
-      const [completed] = await manager.query<unknown[]>('SELECT id FROM exam_report_completions WHERE exam_id=$1', [id])
-      if (completed) throw new ConflictException('Laudo finalizado: esta ação exige um fluxo de retificação.')
+      const [completed] = await manager.query<CompletedReportRow[]>('SELECT * FROM exam_report_completions WHERE exam_id=$1 ORDER BY version DESC LIMIT 1', [id])
+      const [draft]=await manager.query<Array<{base_completion_id:string|null}>>('SELECT base_completion_id FROM exam_report_drafts WHERE exam_id=$1',[id])
+      if (completed && !(action==='START' && draft?.base_completion_id===completed.id)) throw new ConflictException('Laudo assinado: esta ação exige um fluxo de correção.')
       const claimingLegacyReport = action === 'START' && context.role === 'DOCTOR' && exam.workflowState === 'IN_PROGRESS' && !exam.reportingUserId
       if (!rule.from.includes(exam.workflowState) && !claimingLegacyReport)
         throw new ConflictException('Transição operacional inválida.')
       if (action === 'RELEASE')
         await this.checklist.assertComplete(exam, manager)
       if (action === 'START') {
-        assertReportOwner(exam, context)
+        if(await this.sessions.current(id,manager)) throw new ConflictException('O laudário está aberto. Aguarde o encerramento da sessão.')
+        if(context.role==='DOCTOR') await requireReportingDoctor(exam.unitId,context,manager)
+        if(completed) await assertRevisionAuthorized(completed,context,manager)
+        if(exam.workflowState==='TYPED' && exam.reportingUserId && exam.reportingUserId!==context.userId) reportReason(dto.takeoverReason??'')
+        else assertReportOwner(exam, context)
         await assertHospitalOriginReceived(id, manager)
         if (context.role === 'DOCTOR')
           await manager.query(
@@ -87,6 +101,7 @@ export class ExamWorkflowService {
           [id, context.userId],
         )
       if (action === 'CANCEL' || action === 'REOPEN') {
+        if(await this.sessions.current(id,manager)) throw new ConflictException('Encerre a sessão de laudo antes de alterar o fluxo.')
         await manager.query('DELETE FROM exam_report_presences WHERE exam_id=$1', [id])
         await manager.query('UPDATE exams SET reporting_user_id=NULL,reporting_started_at=NULL WHERE id=$1', [id])
       }
@@ -98,7 +113,7 @@ export class ExamWorkflowService {
           : action === 'CANCEL'
             ? 'EXAM_CANCELLED'
             : 'EXAM_WORKFLOW_CHANGED',
-        dto.reason,
+        dto.takeoverReason ?? dto.reason,
         context,
         manager,
       )

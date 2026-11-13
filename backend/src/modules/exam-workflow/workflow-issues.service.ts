@@ -5,6 +5,7 @@ import type { OpenWorkflowIssueDto, ResolveWorkflowIssueDto } from './workflow.d
 import type { WorkflowIssue } from './workflow.contracts'
 import { WorkflowStoreService } from './workflow-store.service'
 import { WorkflowIssueEvidenceService } from './workflow-issue-evidence.service'
+import { ReportSessionStore } from './report-session-store.service'
 
 @Injectable()
 export class WorkflowIssuesService {
@@ -12,11 +13,13 @@ export class WorkflowIssuesService {
     private readonly database: DataSource,
     private readonly store: WorkflowStoreService,
     private readonly evidence: WorkflowIssueEvidenceService,
+    private readonly sessions:ReportSessionStore,
   ) {}
   async open(id: string, dto: OpenWorkflowIssueDto, context: CompanyAccessContext) {
     this.store.permission(context, 'exams.issues.manage')
     return this.store.run(id, dto.expectedVersion, context, async (exam, manager) => {
       this.store.assertMutable(exam)
+      if(await this.sessions.current(id,manager)) throw new ConflictException('Salve e encerre o laudário antes de registrar pendência ou reconvocação.')
       await this.evidence.opening(exam, dto, context, manager)
       const [previous] = await manager.query<Array<{ phase: WorkflowIssue['phase'] }>>(
         'SELECT phase FROM exam_workflow_issues WHERE exam_id=$1 AND resolved_at IS NULL ORDER BY opened_at LIMIT 1',
@@ -26,8 +29,8 @@ export class WorkflowIssuesService {
         previous?.phase ??
         (['IN_PROGRESS', 'TYPED'].includes(exam.workflowState) ? 'REPORTING' : 'PREPARATION')
       const issued = await manager.query<WorkflowIssue[]>(
-        `INSERT INTO exam_workflow_issues(company_id,unit_id,exam_id,kind,category,reason,requested_action,responsible_user_id,opened_by_user_id,phase,attachment_ids,comment_ids)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+        `INSERT INTO exam_workflow_issues(company_id,unit_id,exam_id,kind,category,reason,requested_action,responsible_user_id,opened_by_user_id,phase,attachment_ids,comment_ids,recall_purpose)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
         [
           exam.companyId,
           exam.unitId,
@@ -41,6 +44,7 @@ export class WorkflowIssuesService {
           phase,
           dto.attachmentIds ?? [],
           dto.commentIds ?? [],
+          dto.kind==='RECALL' ? dto.recallPurpose??'CORRECTION' : null,
         ],
       )
       const issue = issued[0]!

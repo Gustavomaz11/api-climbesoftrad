@@ -1,79 +1,32 @@
-import { NotFoundException } from '@nestjs/common'
-import type { DataSource, EntityManager } from 'typeorm'
-import { companyTestContext as context } from '../../../test/company-test-context'
-import { ExamReportPresenceService } from './exam-report-presence.service'
-import type { ExamAccessService } from './exam-access.service'
-import type { OperationalAuditService } from '../companies/operational-audit.service'
-import type { WorkflowStoreService } from '../exam-workflow/workflow-store.service'
+import {ForbiddenException,NotFoundException} from '@nestjs/common'
+import type {EntityManager} from 'typeorm'
+import type {ExamEntity} from '../../database/entities/exam.entity'
+import type {WorkflowStoreService} from '../exam-workflow/workflow-store.service'
+import type {ReportSessionStore} from '../exam-workflow/report-session-store.service'
+import {companyTestContext as context} from '../../../test/company-test-context'
+import {ExamReportPresenceService} from './exam-report-presence.service'
 
-describe('ExamReportPresenceService', () => {
-  const requireExam = jest.fn()
-  const existsBy = jest.fn()
-  const upsert = jest.fn()
-  const deletePresence = jest.fn()
-  const record = jest.fn()
-  const manager = { getRepository: () => ({ existsBy, upsert, delete: deletePresence }) }
-  const database = {
-    transaction: (operation: (manager: EntityManager) => Promise<unknown>) =>
-      operation(manager as unknown as EntityManager),
-  }
-  const service = new ExamReportPresenceService(
-    database as unknown as DataSource,
-    { require: requireExam } as unknown as ExamAccessService,
-    { record } as unknown as OperationalAuditService,
-    { writable: async (_id: string, _context: unknown, operation: (exam: unknown, manager: unknown) => Promise<unknown>) => {
-      const authorized: unknown = await requireExam(_id, _context)
-      return operation(authorized, manager)
-    } } as WorkflowStoreService,
+describe('Medical report editing session authorization',()=>{
+  const acquire=jest.fn(),requireExam=jest.fn()
+  const manager={query:()=>Promise.resolve([{active:true,uf:null,registry_profile:null}])} as unknown as EntityManager
+  const service=new ExamReportPresenceService(
+    {writable:async(id:string,ctx:unknown,operation:(exam:ExamEntity,manager:EntityManager)=>Promise<unknown>)=>operation(await requireExam(id,ctx) as ExamEntity,manager)} as WorkflowStoreService,
+    {acquire} as unknown as ReportSessionStore,
   )
-
-  beforeEach(() => {
-    jest.clearAllMocks()
-    requireExam.mockResolvedValue({ unitId: context.unitIds[0] })
-    existsBy.mockResolvedValue(false)
+  beforeEach(()=>{jest.clearAllMocks();requireExam.mockResolvedValue({id:'exam',unitId:context.unitIds[0],workflowState:'IN_PROGRESS',reportingUserId:context.userId});acquire.mockResolvedValue({active:true,releaseRequested:false})})
+  it('does not acquire an inaccessible examination',async()=>{
+    requireExam.mockRejectedValueOnce(new NotFoundException())
+    await expect(service.touch('exam',context,'client')).rejects.toBeInstanceOf(NotFoundException)
+    expect(acquire).not.toHaveBeenCalled()
   })
-
-  it('creates or renews presence within the authorized exam', async () => {
-    await expect(service.touch('exam-id', context, 'client-id')).resolves.toEqual({ active: true })
-    expect(upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        examId: 'exam-id',
-        userId: context.userId,
-        clientId: 'client-id',
-        lastSeenAt: expect.any(Date) as unknown,
-      }),
-      ['examId', 'userId', 'clientId'],
-    )
-    expect(record).toHaveBeenCalledWith(
-      context,
-      expect.objectContaining({ action: 'REPORT_PRESENCE_STARTED' }),
-      manager,
-    )
+  it('does not grant a nonmedical administrator an editing session',async()=>{
+    await expect(service.touch('exam',{...context,role:'ADMIN'},'client')).rejects.toBeInstanceOf(ForbiddenException)
+    expect(acquire).not.toHaveBeenCalled()
   })
-
-  it('does not create presence for an inaccessible exam', async () => {
-    requireExam.mockRejectedValue(new NotFoundException())
-    await expect(service.touch('exam-id', context, 'client-id')).rejects.toBeInstanceOf(
-      NotFoundException,
-    )
-    expect(upsert).not.toHaveBeenCalled()
-  })
-
-  it('releases only the current user and client', async () => {
-    deletePresence.mockResolvedValue({ affected: 1 })
-    await expect(service.release('exam-id', context, 'client-id')).resolves.toEqual({
-      active: false,
-    })
-    expect(deletePresence).toHaveBeenCalledWith({
-      examId: 'exam-id',
-      userId: context.userId,
-      clientId: 'client-id',
-    })
-  })
-
-  it('does not duplicate an entry event on a heartbeat', async () => {
-    existsBy.mockResolvedValue(true)
-    await service.touch('exam-id', context, 'client-id')
-    expect(record).not.toHaveBeenCalled()
+  it('only acquires the assigned physician session',async()=>{
+    requireExam.mockResolvedValueOnce({workflowState:'IN_PROGRESS',reportingUserId:'other-doctor'})
+    await expect(service.touch('exam',context,'client')).rejects.toBeInstanceOf(ForbiddenException)
+    expect(acquire).not.toHaveBeenCalled()
+    await expect(service.touch('exam',context,'client')).resolves.toMatchObject({active:true})
   })
 })

@@ -52,7 +52,7 @@ export class PatientHistoryService {
       throw new NotFoundException('Exame não encontrado neste paciente.')
     const [report, prescription, attachments] = await Promise.all([
       context.permissions.includes('reports.view')
-        ? this.objects.readText('reports/' + examId + '/report.json')
+        ? this.reportAvailability(examId)
         : Promise.resolve(undefined),
       context.permissions.includes('prescriptions.view')
         ? this.objects.readText('prescriptions/' + examId + '/prescription.json')
@@ -69,6 +69,13 @@ export class PatientHistoryService {
       attachments: attachments.status,
       attachmentCount: attachments.count,
     }
+  }
+  private async reportAvailability(examId:string) {
+    const [signed]=await this.database.query<Array<{id:string}>>('SELECT id FROM exam_report_completions WHERE exam_id=$1 ORDER BY version DESC LIMIT 1',[examId])
+    if(signed)return JSON.stringify({examId,content:{type:'doc'},signature:true})
+    const [draft]=await this.database.query<Array<{content:unknown;has_content:boolean}>>('SELECT content,has_content FROM exam_report_drafts WHERE exam_id=$1',[examId])
+    if(draft)return draft.has_content?JSON.stringify({examId,content:draft.content}):null
+    return this.objects.readText('reports/'+examId+'/report.json')
   }
   summary(exam: ExamEntity) {
     return {

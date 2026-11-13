@@ -6,6 +6,9 @@ export const workflowStates = [
   'IN_PROGRESS',
   'TYPED',
   'SIGNED',
+  'RESIGNED',
+  'REVIEW',
+  'REVALIDATED',
   'PENDING',
   'RECALLED',
   'CANCELLED',
@@ -20,7 +23,7 @@ export const transitionRules: Record<
   { from: readonly WorkflowState[]; to: WorkflowState; permission: PermissionCode }
 > = {
   RELEASE: { from: ['TO_PREPARE'], to: 'READY', permission: 'exams.prepare' },
-  START: { from: ['TO_PREPARE', 'READY'], to: 'IN_PROGRESS', permission: 'reports.edit' },
+  START: { from: ['TO_PREPARE', 'READY', 'TYPED'], to: 'IN_PROGRESS', permission: 'reports.edit' },
   REOPEN: {
     from: ['READY', 'IN_PROGRESS', 'TYPED'],
     to: 'TO_PREPARE',

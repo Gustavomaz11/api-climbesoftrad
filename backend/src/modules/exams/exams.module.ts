@@ -27,6 +27,11 @@ import { R2ObjectStorage } from './r2-object-storage.service'
 import { ReportCompletionController, HospitalResultsController } from './report-completion.controller'
 import { ReportCompletionService } from './report-completion.service'
 import { ReportDeliveryService } from './report-delivery.service'
+import { ReportDraftStore } from './report-draft-store.service'
+import { ReportVersionAccess } from './report-version-access.service'
+import { ReportReviewService } from './report-review.service'
+import { ReportHistoryService } from './report-history.service'
+import { ReportLifecycleController } from './report-lifecycle.controller'
 
 @Module({
   imports: [
@@ -48,8 +53,9 @@ import { ReportDeliveryService } from './report-delivery.service'
     ]),
     AuthModule,
   ],
-  controllers: [ExamsController, ReportCompletionController, HospitalResultsController],
+  controllers: [ExamsController, ReportCompletionController, HospitalResultsController, ReportLifecycleController],
   providers: [
+    ReportDraftStore,ReportVersionAccess,ReportReviewService,ReportHistoryService,
     ExamsService,
     ExamAccessService,
     ExamReportsService,

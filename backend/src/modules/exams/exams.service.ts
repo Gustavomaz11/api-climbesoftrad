@@ -51,11 +51,11 @@ export class ExamsService {
         unitIds: context.unitIds,
       })
 
-    if (query.assignment === 'UNASSIGNED') builder.andWhere('exam.reporting_user_id IS NULL')
+    if (query.assignment === 'UNASSIGNED') builder.andWhere("(exam.reporting_user_id IS NULL OR exam.workflow_state='TYPED')")
     if (query.assignment === 'MINE') {
       builder.andWhere('exam.reporting_user_id=:reportingUserId', { reportingUserId: context.userId })
       builder.andWhere("exam.archived_at IS NULL AND exam.workflow_state<>'CANCELLED'")
-      builder.andWhere('NOT EXISTS (SELECT 1 FROM exam_report_completions c WHERE c.exam_id=exam.id AND c.sent_at IS NOT NULL)')
+      builder.andWhere("(exam.workflow_state IN ('IN_PROGRESS','TYPED','REVIEW','PENDING','RECALLED') OR NOT EXISTS (SELECT 1 FROM exam_report_completions c WHERE c.id=(SELECT id FROM exam_report_completions latest WHERE latest.exam_id=exam.id ORDER BY latest.version DESC LIMIT 1) AND c.sent_at IS NOT NULL))")
     }
     if (query.workflowState) builder.andWhere('exam.workflow_state=:workflowState', { workflowState: query.workflowState })
     if (query.queue === 'ARCHIVED') builder.andWhere('exam.archived_at IS NOT NULL')
@@ -270,19 +270,22 @@ export class ExamsService {
     )
 
     const completions = await this.database.query<Array<{ exam_id: string; id: string; sent_at: Date | null; finalized_at: Date; origin_unit_id: string | null }>>(
-      'SELECT exam_id,id,sent_at,finalized_at,origin_unit_id FROM exam_report_completions WHERE exam_id=ANY($1::uuid[])', [examIds])
+      'SELECT DISTINCT ON(exam_id) exam_id,id,sent_at,finalized_at,origin_unit_id FROM exam_report_completions WHERE exam_id=ANY($1::uuid[]) ORDER BY exam_id,version DESC', [examIds])
     const completionByExam = new Map(completions.map(row => [row.exam_id, row]))
     const owners = await this.database.query<Array<{ id: string; full_name: string }>>(
       'SELECT id,full_name FROM auth_users WHERE id=ANY($1::uuid[])',
       [exams.flatMap(exam => exam.reportingUserId ? [exam.reportingUserId] : [])],
     )
     const ownerNames = new Map(owners.map(owner => [owner.id, owner.full_name]))
+    const recalls=await this.database.query<Array<{exam_id:string;recall_purpose:string}>>('SELECT DISTINCT ON(exam_id) exam_id,recall_purpose FROM exam_workflow_issues WHERE exam_id=ANY($1::uuid[]) AND kind=$2 AND resolved_at IS NULL ORDER BY exam_id,opened_at DESC',[examIds,'RECALL'])
+    const recallByExam=new Map(recalls.map(row=>[row.exam_id,row.recall_purpose]))
     return exams.map((exam) => ({
       ...exam,
       unit: exam.unit.internalIdentifier?.trim() || exam.unit.name,
       unitName: exam.unit.name,
       unitInternalIdentifier: exam.unit.internalIdentifier,
       reportingUserName: (exam.reportingUserId ? ownerNames.get(exam.reportingUserId) : null) ?? reportingUserByExam.get(exam.id) ?? null,
+      recallPurpose:recallByExam.get(exam.id)??null,
       commentCount: commentCountByExam.get(exam.id) ?? 0,
       imageStatus:images.get(exam.id)?.imageStatus??'NO_IMAGES',
       imageSeriesCount:images.get(exam.id)?.imageSeriesCount??0,

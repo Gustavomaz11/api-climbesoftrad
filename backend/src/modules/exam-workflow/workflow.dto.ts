@@ -18,6 +18,7 @@ import { examPriorities, type ExamPriority } from '../../database/entities/exam.
 import { preparationItems, type PreparationItem } from './workflow.contracts'
 
 export class VersionedWorkflowDto {
+  @IsOptional() @IsString() @MinLength(10) @MaxLength(1000) takeoverReason?: string
   @IsInt() @Min(1) expectedVersion: number
   @IsString() @MinLength(3) @MaxLength(500) reason: string
 }
@@ -54,6 +55,7 @@ export class PriorityChangeDto extends VersionedWorkflowDto {
   @IsIn(examPriorities) priority: ExamPriority
 }
 export class OpenWorkflowIssueDto extends VersionedWorkflowDto {
+  @IsOptional() @IsIn(['CORRECTION', 'COMPLEMENT']) recallPurpose?: 'CORRECTION' | 'COMPLEMENT'
   @IsIn(['PENDING', 'RECALL']) kind: 'PENDING' | 'RECALL'
   @IsIn(['DOCUMENT', 'IMAGES', 'IDENTITY', 'CLASSIFICATION', 'OTHER']) category: string
   @IsOptional() @IsIn(['ACQUISITION', 'DOCUMENTS']) requestedAction?: 'ACQUISITION' | 'DOCUMENTS'
