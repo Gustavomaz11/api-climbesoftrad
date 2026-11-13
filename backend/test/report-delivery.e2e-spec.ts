@@ -239,6 +239,8 @@ describe('Doctor completion and explicit return to the origin hospital', () => {
     await doctor('post',`/exams/${id}/report/session/close`).send({clientId,content:corrected}).expect(201)
     expect((await f.current(id)).exam.workflowState).toBe('TYPED')
     expect(responseBody<{content:unknown}>(await doctor('get',`/exams/${id}/report`).expect(200)).content).toEqual(corrected)
+    await f.database.query('SELECT invalidate_exam_preparation($1,$2,$3)',[id,'Nova evidência preserva o laudo Digitado',doctorId])
+    expect((await f.current(id)).exam.workflowState).toBe('TYPED')
     await secondDoctor('get',`/exams/${id}/report`).expect(409)
     await doctor('put',`/exams/${id}/report`).send({clientId,content}).expect(409)
     const version=(await f.current(id)).exam.workflowVersion
