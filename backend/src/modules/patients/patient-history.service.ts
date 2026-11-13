@@ -60,7 +60,7 @@ export class PatientHistoryService {
       this.attachments.availability(examId, context),
     ])
     return {
-      report: documentAvailability(report, examId),
+      report: documentAvailability(report, examId, true),
       prescription: documentAvailability(prescription, examId, true),
       images: context.permissions.includes('exams.viewer.open')
         ? await this.database.getRepository(DicomStudyEntity).existsBy({examId,companyId:context.companyId}) ? 'AVAILABLE' : 'UNAVAILABLE'
