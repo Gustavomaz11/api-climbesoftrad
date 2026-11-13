@@ -1,3 +1,4 @@
+import type { PortalKind } from '../../companies/portal-access'
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 import {
   IsBoolean,
@@ -10,6 +11,10 @@ import {
 } from 'class-validator'
 
 export class LoginDto {
+  @IsOptional()
+  @IsIn(['sourad', 'hospital', 'configuracoes'])
+  portalKind?: PortalKind
+
   @ApiProperty({ example: 'usuario@hospital.com.br ou 7626SE' })
   @IsString()
   @Length(1, 254)

@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm'
 import { randomUUID } from 'node:crypto'
 import type { Request } from 'express'
 import type { Repository } from 'typeorm'
+import { parsePortalKind } from '../../companies/portal-access'
 import { AuthSessionEntity } from '../../../database/entities/auth-session.entity'
 import { AccessTokenService } from '../access-token.service'
 import type { AuthenticatedRequest } from '../auth.contracts'
@@ -21,6 +22,7 @@ export class AccessTokenGuard implements CanActivate {
     if (!authorization?.startsWith('Bearer ')) {
       throw new UnauthorizedException('Access token ausente ou inválido.')
     }
+    const portalKind = parsePortalKind(request.get('X-Portal-Kind'))
     try {
       const claims = await this.accessTokens.verify(authorization.slice(7))
       const session = await this.sessionRepository.findOne({
@@ -36,6 +38,7 @@ export class AccessTokenGuard implements CanActivate {
         throw new UnauthorizedException('Sessão inválida ou expirada.')
       }
       ;(request as AuthenticatedRequest).auth = {
+        portalKind,
         userId: claims.sub,
         sessionId: claims.sid,
         role: session.user.role,

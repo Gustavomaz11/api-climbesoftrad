@@ -1,3 +1,4 @@
+import { assertPortalAccess } from '../companies/portal-access'
 import { CompanyScopeService } from '../companies/company-scope.service'
 import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
@@ -65,6 +66,11 @@ export class LoginService {
       throw new UnauthorizedException(invalidCredentialsMessage)
     }
 
+    if (dto.portalKind && user.role !== 'ADMIN') {
+      const companies = await this.companies.available(user.id, false)
+      const central = companies.find(c => c.id === this.companies.centralCompanyId)
+      assertPortalAccess(central?.allowedPortals ?? [], dto.portalKind)
+    }
     return this.createAuthorizationCode(user, dto, metadata)
   }
 

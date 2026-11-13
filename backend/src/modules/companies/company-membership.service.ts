@@ -1,5 +1,6 @@
-import { ConflictException, Injectable } from '@nestjs/common'
+import { ConflictException, ForbiddenException, Injectable } from '@nestjs/common'
 import { DataSource } from 'typeorm'
+import type { PortalKind } from './portal-access'
 import { CompanyMembershipEntity } from '../../database/entities/company-membership.entity'
 import type { CompanyAccessContext } from './company-context.contracts'
 import { CompanyMembershipReader } from './company-membership-reader'
@@ -32,7 +33,7 @@ export class CompanyMembershipService {
       membership.active = locked.active
       if (membership.active === active) return this.reader.response(membership, context)
       membership.active = active
-      await repository.save(membership)
+      await repository.update(id, { active })
       if (!active) await clearCompanyReportPresence(manager, context.companyId, membership.userId)
       await this.audit.record(
         context,
@@ -44,6 +45,23 @@ export class CompanyMembershipService {
         },
         manager,
       )
+      return this.reader.response(membership, context)
+    })
+  }
+
+  async portals(id: string, allowedPortals: PortalKind[], context: CompanyAccessContext) {
+    return this.database.transaction(async manager => {
+      const membership = await this.reader.get(id, context, manager)
+      this.reader.assertManage(membership, context)
+      const repository = manager.getRepository(CompanyMembershipEntity)
+      const locked = await repository.findOneOrFail({ where: { id }, lock: { mode: 'pessimistic_write' } })
+      const previous = locked.allowedPortals
+      locked.allowedPortals = allowedPortals
+      await repository.save(locked)
+      if (!allowedPortals.includes('sourad')) await clearCompanyReportPresence(manager, context.companyId, membership.userId)
+      await this.audit.record(context, { action: 'MEMBERSHIP_UPDATED', resourceType: 'membership', resourceId: id,
+        metadata: { previousPortals: previous.join(','), allowedPortals: allowedPortals.join(',') } }, manager)
+      membership.allowedPortals = allowedPortals
       return this.reader.response(membership, context)
     })
   }
@@ -111,6 +129,7 @@ export class CompanyMembershipService {
     return this.database.transaction(async (manager) => {
       const membership = await this.reader.get(id, context, manager)
       if (membership.userId !== context.userId) {
+        if (!(context.isPlatformAdmin || (context.allowedPortals?.includes('configuracoes') && (!context.portalKind || context.portalKind === 'configuracoes')))) throw new ForbiddenException('Acesse a Gestão para alterar outro usuário.')
         if (!context.permissions.includes('memberships.manage')) {
           throw new ConflictException('Você pode alterar apenas suas preferências nesta empresa.')
         }

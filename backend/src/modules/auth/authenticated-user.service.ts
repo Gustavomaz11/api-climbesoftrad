@@ -55,6 +55,7 @@ export class AuthenticatedUserService {
       isPlatformAdmin,
       accessRole: company?.accessRole ?? { id: '', code: '', name: 'Selecione uma empresa' },
       permissions: context?.permissions ?? [],
+      allowedPortals: context?.allowedPortals ?? [],
       companies: available,
       activeCompany: context
         ? {

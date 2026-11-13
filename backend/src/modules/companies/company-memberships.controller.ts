@@ -21,6 +21,7 @@ import { CompanyMembershipReader } from './company-membership-reader'
 import { CompanyMembershipService } from './company-membership.service'
 import { CompanyUserProvisioner } from './company-user-provisioner'
 import {
+  MembershipPortalsDto,
   MembershipPreferencesDto,
   MembershipStatusDto,
   MembershipUnitsDto,
@@ -64,6 +65,12 @@ export class CompanyMembershipsController {
     @Req() request: CompanyAuthenticatedRequest,
   ) {
     return this.memberships.setActive(id, dto.active, request.auth, dto.reason)
+  }
+
+  @Put(':id/portals')
+  @RequirePermissions('memberships.manage')
+  portals(@Param('id', ParseUUIDPipe) id: string, @Body() dto: MembershipPortalsDto, @Req() request: CompanyAuthenticatedRequest) {
+    return this.memberships.portals(id, dto.allowedPortals, request.auth)
   }
 
   @Put(':id/units')

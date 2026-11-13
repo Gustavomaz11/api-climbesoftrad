@@ -102,6 +102,7 @@ export class CompanyMembershipReader {
       active:
         membership.active && membership.user.status === 'ACTIVE' && membership.accessRole.active,
       allUnits: membership.allUnits,
+      allowedPortals: membership.allowedPortals,
       unitIds: links.filter((link) => link.active).map((link) => link.unitId),
       units: links.map((link) => ({
         id: link.unitId,

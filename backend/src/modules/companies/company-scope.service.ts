@@ -14,6 +14,7 @@ import { HospitalUnitEntity } from '../../database/entities/hospital-unit.entity
 import { allPermissionCodes, type PermissionCode } from '../access-control/permission.catalog'
 import type { AuthenticatedRequestData } from '../auth/auth.contracts'
 import type { CompanyAccessContext, CompanyAccessSummary } from './company-context.contracts'
+import { assertPortalAccess, portalKinds } from './portal-access'
 import { assertUnitScope } from './company-access-policy'
 
 export interface AvailableCompany extends CompanyAccessSummary {
@@ -38,6 +39,7 @@ export class CompanyScopeService {
           name: company.name,
           membershipId: null,
           allUnits: true,
+          allowedPortals: [...portalKinds],
           accessRole: { id: '', code: 'PLATFORM_ADMIN', name: 'Administrador da plataforma' },
           permissions: [...allPermissionCodes],
           units: await this.database.getRepository(HospitalUnitEntity).find({
@@ -59,6 +61,7 @@ export class CompanyScopeService {
         name: membership.company.name,
         membershipId: membership.id,
         allUnits: membership.allUnits,
+        allowedPortals: membership.allowedPortals,
         accessRole: {
           id: membership.accessRole.id,
           code: membership.accessRole.code,
@@ -106,6 +109,7 @@ export class CompanyScopeService {
         throw new ForbiddenException('Você não possui acesso a esta empresa.')
       throw new BadRequestException('Selecione a empresa para continuar.')
     }
+    assertPortalAccess(company.allowedPortals, auth.portalKind)
     if (selectedUnitId && !company.units.some((unit) => unit.id === selectedUnitId)) {
       throw new NotFoundException('Unidade não encontrada.')
     }
@@ -114,6 +118,7 @@ export class CompanyScopeService {
       companyId: company.id,
       companyName: company.name,
       membershipId: company.membershipId,
+      allowedPortals: company.allowedPortals,
       allUnits: company.allUnits && !selectedUnitId,
       unitIds: selectedUnitId ? [selectedUnitId] : company.units.map((unit) => unit.id),
       selectedUnitId: selectedUnitId ?? null,

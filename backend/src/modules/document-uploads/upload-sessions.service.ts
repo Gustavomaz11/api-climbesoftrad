@@ -51,12 +51,15 @@ export class UploadSessionsService {
       order: { createdAt: 'DESC' },
       take: 100,
     })
-    return records.map((record) => this.present(record, []))
+    return records.filter(record => this.scope.permitsPortal(record.kind, record.payload.hospitalIntake === true, context)).map((record) => this.present(record, []))
   }
   async create(dto: CreateUploadDto, context: CompanyAccessContext) {
     if (dto.sourceId && context.integrationSourceId !== dto.sourceId)
       throw new BadRequestException('Origem exclusiva da credencial do agente.')
     this.scope.permission(dto.kind, context)
+    const hospitalIntake = dto.kind === 'DICOM' && (dto.hospitalIntake === true ||
+      (context.permissions.includes('hospital.intake.submit') && !context.permissions.includes('exams.create')))
+    this.scope.portal(dto.kind, hospitalIntake, context)
     const unit = await this.companies.requireUnit(dto.unitId, context)
     if (!unit.active) throw new BadRequestException('Unidade inativa.')
     assertUploadInput(
@@ -90,8 +93,6 @@ export class UploadSessionsService {
     const multipartId = await this.storage.begin(storageKey, dto.contentType, dto.sha256)
     try {
       const saved = await this.database.transaction(async (manager) => {
-        const hospitalIntake = dto.kind === 'DICOM' && (dto.hospitalIntake === true ||
-          (context.permissions.includes('hospital.intake.submit') && !context.permissions.includes('exams.create')))
         if (hospitalIntake) await manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [receiptLock(context.companyId, dto.unitId)])
         await validateHospitalDelivery(manager, dto, context, hospitalIntake)
         const session = await manager.getRepository(UploadSessionEntity).save({

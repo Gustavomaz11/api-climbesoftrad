@@ -1,7 +1,10 @@
+import type { PortalKind } from '../../companies/portal-access'
 import { ApiProperty } from '@nestjs/swagger'
 import type { CompanyAccessSummary } from '../../companies/company-context.contracts'
 
 export class AuthenticatedUserDto {
+  @ApiProperty({ type: [String] })
+  allowedPortals: PortalKind[]
   @ApiProperty({ format: 'uuid' }) centralCompanyId: string
   @ApiProperty({ format: 'uuid' })
   id: string

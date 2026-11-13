@@ -146,6 +146,7 @@ export class PhysiciansService {
             accessRoleId: role.id,
             active: true,
             allUnits: dto.allUnits,
+            allowedPortals: dto.allowedPortals ?? ['sourad'],
           }),
         )
         await saveMembershipUnits(
@@ -269,6 +270,7 @@ export class PhysiciansService {
       mustChangePassword: membership.user.mustChangePassword,
       createdAt: physician.createdAt,
       membershipId: membership.id,
+      allowedPortals: membership.allowedPortals,
       canManage: access.canManage,
       allUnits: access.allUnits,
       unitIds: access.unitIds,

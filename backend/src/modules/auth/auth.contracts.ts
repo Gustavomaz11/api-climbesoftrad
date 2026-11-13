@@ -1,3 +1,4 @@
+import type { PortalKind } from '../companies/portal-access'
 import type { AuthenticatedUserDto } from './dto/authenticated-user.dto'
 import type { Request } from 'express'
 import type { PermissionCode } from '../access-control/permission.catalog'
@@ -32,6 +33,7 @@ export interface AccessTokenClaims {
 }
 
 export interface AuthenticatedRequestData {
+  portalKind?: PortalKind
   isPlatformAdmin: boolean
   correlationId: string
   userId: string

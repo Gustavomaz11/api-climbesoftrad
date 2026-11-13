@@ -8,6 +8,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm'
+import type { PortalKind } from '../../modules/companies/portal-access'
 import { AuthUserEntity } from './auth-user.entity'
 import { AccessRoleEntity } from './access-role.entity'
 import { CompanyEntity } from './company.entity'
@@ -29,6 +30,9 @@ export class CompanyMembershipEntity {
 
   @Column({ type: 'boolean', default: true })
   active: boolean
+
+  @Column({ name: 'allowed_portals', type: 'varchar', array: true, default: () => "ARRAY['sourad']::varchar[]" })
+  allowedPortals: PortalKind[]
 
   @Column({ name: 'all_units', type: 'boolean', default: false })
   allUnits: boolean

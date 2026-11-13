@@ -1,8 +1,13 @@
+import type { PortalKind } from '../../companies/portal-access'
 import { Transform } from 'class-transformer'
 import { MembershipUnitsDto } from '../../companies/dto/membership.dto'
-import { IsEmail, IsOptional, IsString, IsUUID, Length, Matches } from 'class-validator'
+import { ArrayMinSize, ArrayMaxSize, ArrayUnique, IsArray, IsIn, IsEmail, IsOptional, IsString, IsUUID, Length, Matches } from 'class-validator'
 
 export class CreatePhysicianDto extends MembershipUnitsDto {
+  @IsOptional() @IsArray() @ArrayMinSize(1) @ArrayMaxSize(3) @ArrayUnique()
+  @IsIn(['sourad', 'hospital', 'configuracoes'], { each: true })
+  allowedPortals?: PortalKind[]
+
   @Transform(({ value }: { value: unknown }) => typeof value === 'string' ? value.trim().toLowerCase() : value)
   @IsEmail()
   @Length(3, 254)

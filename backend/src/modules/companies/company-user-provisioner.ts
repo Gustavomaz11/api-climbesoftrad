@@ -2,6 +2,7 @@ import { ConflictException, ForbiddenException, Injectable } from '@nestjs/commo
 import { DataSource } from 'typeorm'
 import { AuthUserEntity } from '../../database/entities/auth-user.entity'
 import { CompanyMembershipEntity } from '../../database/entities/company-membership.entity'
+import { defaultRolePortals } from './portal-access'
 import { CryptoService } from '../auth/crypto.service'
 import type { CompanyAccessContext } from './company-context.contracts'
 import {
@@ -63,6 +64,7 @@ export class CompanyUserProvisioner {
             accessRoleId: role.id,
             active: true,
             allUnits: dto.allUnits,
+            allowedPortals: dto.allowedPortals ?? defaultRolePortals(role.code, role.permissions.map(p => p.code)),
           }),
         )
         await saveMembershipUnits(
@@ -78,6 +80,7 @@ export class CompanyUserProvisioner {
             resourceType: 'membership',
             resourceId: membership.id,
             metadata: {
+              allowedPortals: membership.allowedPortals.join(','),
               existingIdentity: existing,
               roleId: role.id,
               unitCount: unitIds.length,

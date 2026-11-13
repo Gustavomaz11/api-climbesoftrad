@@ -1,6 +1,8 @@
+import type { PortalKind } from './portal-access'
 import type { AuthenticatedRequest, AuthenticatedRequestData } from '../auth/auth.contracts'
 
 export interface CompanyAccessContext extends AuthenticatedRequestData {
+  allowedPortals?: PortalKind[]
   integrationSourceId?: string
   companyId: string
   companyName: string
@@ -15,6 +17,7 @@ export interface CompanyAuthenticatedRequest extends AuthenticatedRequest {
 }
 
 export interface CompanyAccessSummary {
+  allowedPortals: PortalKind[]
   id: string
   name: string
   membershipId: string | null

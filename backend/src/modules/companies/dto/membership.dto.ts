@@ -1,6 +1,9 @@
+import type { PortalKind } from '../portal-access'
 import { Transform } from 'class-transformer'
 import {
   ArrayMaxSize,
+  ArrayMinSize,
+  IsIn,
   ArrayUnique,
   IsArray,
   IsBoolean,
@@ -30,7 +33,17 @@ export class MembershipUnitsDto {
   reason?: string
 }
 
+export class MembershipPortalsDto {
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(3) @ArrayUnique()
+  @IsIn(['sourad', 'hospital', 'configuracoes'], { each: true })
+  allowedPortals: PortalKind[]
+}
+
 export class ProvisionCompanyUserDto extends MembershipUnitsDto {
+  @IsOptional() @IsArray() @ArrayMinSize(1) @ArrayMaxSize(3) @ArrayUnique()
+  @IsIn(['sourad', 'hospital', 'configuracoes'], { each: true })
+  allowedPortals?: PortalKind[]
+
   @IsEmail()
   @MaxLength(255)
   email: string

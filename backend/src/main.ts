@@ -49,6 +49,7 @@ const bootstrap = async () => {
       'Content-Type',
       'Authorization',
       'X-Requested-With',
+      'X-Portal-Kind',
       'X-Company-Id',
       'X-Unit-Id',
         'X-Report-Client-Id',
