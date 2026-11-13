@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common'
+import { BadRequestException, ConflictException, ForbiddenException, Injectable } from '@nestjs/common'
 import { createHash } from 'node:crypto'
 import { PatientExamResolverService } from '../patients/patient-exam-resolver.service'
 import { ExamDescriptionResolverService } from '../exam-catalog/exam-description-resolver.service'
@@ -40,6 +40,8 @@ export class ExamsService {
   ) {}
 
   async list(query: ListExamsQueryDto, context: CompanyAccessContext) {
+    if (query.assignment === 'MINE' && context.role !== 'DOCTOR')
+      throw new ForbiddenException('A fila pessoal está disponível somente para médicos.')
     const builder = this.exams
       .createQueryBuilder('exam')
       .leftJoinAndSelect('exam.unit', 'unit')
@@ -49,6 +51,12 @@ export class ExamsService {
         unitIds: context.unitIds,
       })
 
+    if (query.assignment === 'UNASSIGNED') builder.andWhere('exam.reporting_user_id IS NULL')
+    if (query.assignment === 'MINE') {
+      builder.andWhere('exam.reporting_user_id=:reportingUserId', { reportingUserId: context.userId })
+      builder.andWhere("exam.archived_at IS NULL AND exam.workflow_state<>'CANCELLED'")
+      builder.andWhere('NOT EXISTS (SELECT 1 FROM exam_report_completions c WHERE c.exam_id=exam.id AND c.sent_at IS NOT NULL)')
+    }
     if (query.workflowState) builder.andWhere('exam.workflow_state=:workflowState', { workflowState: query.workflowState })
     if (query.queue === 'ARCHIVED') builder.andWhere('exam.archived_at IS NOT NULL')
     else if (query.queue === 'HISTORY') builder.andWhere("(exam.archived_at IS NOT NULL OR exam.workflow_state='CANCELLED')")
@@ -264,12 +272,17 @@ export class ExamsService {
     const completions = await this.database.query<Array<{ exam_id: string; id: string; sent_at: Date | null; finalized_at: Date; origin_unit_id: string | null }>>(
       'SELECT exam_id,id,sent_at,finalized_at,origin_unit_id FROM exam_report_completions WHERE exam_id=ANY($1::uuid[])', [examIds])
     const completionByExam = new Map(completions.map(row => [row.exam_id, row]))
+    const owners = await this.database.query<Array<{ id: string; full_name: string }>>(
+      'SELECT id,full_name FROM auth_users WHERE id=ANY($1::uuid[])',
+      [exams.flatMap(exam => exam.reportingUserId ? [exam.reportingUserId] : [])],
+    )
+    const ownerNames = new Map(owners.map(owner => [owner.id, owner.full_name]))
     return exams.map((exam) => ({
       ...exam,
       unit: exam.unit.internalIdentifier?.trim() || exam.unit.name,
       unitName: exam.unit.name,
       unitInternalIdentifier: exam.unit.internalIdentifier,
-      reportingUserName: reportingUserByExam.get(exam.id) ?? null,
+      reportingUserName: (exam.reportingUserId ? ownerNames.get(exam.reportingUserId) : null) ?? reportingUserByExam.get(exam.id) ?? null,
       commentCount: commentCountByExam.get(exam.id) ?? 0,
       imageStatus:images.get(exam.id)?.imageStatus??'NO_IMAGES',
       imageSeriesCount:images.get(exam.id)?.imageSeriesCount??0,

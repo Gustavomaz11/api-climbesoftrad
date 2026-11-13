@@ -13,6 +13,8 @@ import {
 import { workflowStates, type WorkflowState } from '../../exam-workflow/workflow.contracts'
 
 export class ListExamsQueryDto {
+  @ApiPropertyOptional({ enum: ['UNASSIGNED', 'MINE'] })
+  @IsOptional() @IsIn(['UNASSIGNED', 'MINE']) assignment?: 'UNASSIGNED' | 'MINE'
   @IsOptional() @IsIn(workflowStates) workflowState?: WorkflowState
   @IsOptional() @IsIn(['ACTIVE', 'ARCHIVED', 'ALL', 'PREPARATION', 'HISTORY']) queue?:
     'ACTIVE' | 'ARCHIVED' | 'ALL' | 'PREPARATION' | 'HISTORY'

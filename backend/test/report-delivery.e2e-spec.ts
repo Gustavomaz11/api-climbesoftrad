@@ -12,6 +12,8 @@ describe('Doctor completion and explicit return to the origin hospital', () => {
   let doctor: Awaited<ReturnType<typeof authenticatedTestRequest>>
   let hospital: Awaited<ReturnType<typeof authenticatedTestRequest>>
   let signatureId: string
+  let secondDoctor: Awaited<ReturnType<typeof authenticatedTestRequest>>
+  let doctorId: string
   const content = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Laudo sintético concluído para teste de entrega.' }] }] }
   beforeAll(async () => {
     f = await createWorkflowFixture()
@@ -19,6 +21,11 @@ describe('Doctor completion and explicit return to the origin hospital', () => {
     doctor = await authenticatedTestRequest(f.server, '87654/SE', physician.initialPassword)
     await doctor('put', '/auth/password').send({ currentPassword: physician.initialPassword, newPassword: 'Senha sintética de laudos 2026!' }).expect(200)
     signatureId = responseBody<{ signature: { id: string } }>(await doctor('post', '/physicians/me/signature').attach('signature', await syntheticSignature(), { filename: 'signature.png', contentType: 'image/png' }).expect(200)).signature.id
+    doctorId = (await f.database.query<Array<{ user_id: string }>>('SELECT user_id FROM physicians WHERE crm=$1', ['87654/SE']))[0]!.user_id
+    const second = responseBody<{ initialPassword: string }>(await f.api('post', '/physicians').send({ email: 'second-doctor@integration.test', name: 'Segundo médico sintético', crm: '87655/SE', allUnits: true }).expect(201))
+    secondDoctor = await authenticatedTestRequest(f.server, '87655/SE', second.initialPassword)
+    await secondDoctor('put', '/auth/password').send({ currentPassword: second.initialPassword, newPassword: 'Outra senha sintética de laudos 2026!' }).expect(200)
+    await secondDoctor('post', '/physicians/me/signature').attach('signature', await syntheticSignature(), { filename: 'signature.png', contentType: 'image/png' }).expect(200)
     const roles = responseBody<Array<{ id: string; code: string }>>(await f.api('get', '/access-control/roles').expect(200))
     const account = responseBody<{ initialPassword: string }>(await f.api('post', '/company-memberships').send({ email: 'results@hospital.example.test', fullName: 'Hospital sintético', roleId: roles.find(r => r.code === 'HOSPITAL')!.id, allUnits: false, unitIds: [f.unit] }).expect(201))
     hospital = await authenticatedTestRequest(f.server, 'results@hospital.example.test', account.initialPassword)
@@ -34,7 +41,7 @@ describe('Doctor completion and explicit return to the origin hospital', () => {
   const prepared = async (originUnit?: string) => {
     const exam = await f.exam()
     await f.prepare(exam.id)
-    await f.act(exam.id, 'start')
+    await doctor('post', `/exams/${exam.id}/workflow/start`).send({ expectedVersion: (await f.current(exam.id)).exam.workflowVersion, reason: 'Médico iniciou a elaboração' }).expect(201)
     await f.database.query(`INSERT INTO hospital_intakes(company_id,unit_id,study_uid,identity_hash,status,exam_id,recipient_company_id,recipient_unit_id)
       VALUES($1,$2,$3,$4,'SUBMITTED',$5,$1,$6)`, [initialCompanyId, originUnit ?? f.unit, 'qa.' + randomUUID(), randomUUID(), exam.id, f.unit])
     return exam.id
@@ -47,7 +54,8 @@ describe('Doctor completion and explicit return to the origin hospital', () => {
   it('rejects nonmedical completion and reports whose elaboration has not started', async () => {
     const id = (await f.exam()).id
     await f.api('post', `/exams/${id}/report/finalize`).send({ signatureId, expectedVersion: 1, contentHash: 'a'.repeat(64) }).expect(403)
-    await finalize(id).then(response => expect(response.status).toBe(409))
+    await doctor('put', `/exams/${id}/report`).send({ content }).expect(409)
+    await doctor('post', `/exams/${id}/report/finalize`).send({ signatureId, expectedVersion: 1, contentHash: 'a'.repeat(64) }).expect(409)
   })
   it('finalizes exactly once, freezes the report and exposes it only after explicit delivery', async () => {
     const id = await prepared()
@@ -161,5 +169,52 @@ describe('Doctor completion and explicit return to the origin hospital', () => {
     await f.database.query(`INSERT INTO hospital_intakes(company_id,unit_id,study_uid,identity_hash,status,exam_id,recipient_company_id,recipient_unit_id)
       VALUES($1,$2,$3,$4,'DRAFT',$5,$1,$2)`, [initialCompanyId, f.unit, 'qa.' + randomUUID(), randomUUID(), id])
     await doctor('post', `/exams/${id}/workflow/start`).send({ expectedVersion: (await f.current(id)).exam.workflowVersion, reason: 'Tentativa durante recebimento' }).expect(409)
+  })
+  const queueIds = async (api: typeof doctor, assignment: 'MINE' | 'UNASSIGNED') =>
+    responseBody<{ items: Array<{ id: string }> }>(await api('get', `/exams?assignment=${assignment}&pageSize=50`).expect(200)).items.map(item => item.id)
+
+  it('moves an exam to the responsible doctor queue and retains it without an open editor', async () => {
+    const id = (await f.exam()).id
+    expect(await queueIds(doctor, 'UNASSIGNED')).toContain(id)
+    await doctor('post', `/exams/${id}/workflow/start`).send({ expectedVersion: 1, reason: 'Assumindo na fila pessoal' }).expect(201)
+    expect(await queueIds(doctor, 'UNASSIGNED')).not.toContain(id)
+    expect(await queueIds(doctor, 'MINE')).toContain(id)
+    expect(await queueIds(secondDoctor, 'MINE')).not.toContain(id)
+    expect((await f.current(id)).exam.reportingUserId).toBe(doctorId)
+    expect((await f.database.query<Array<{ count: string }>>('SELECT count(*) FROM exam_report_presences WHERE exam_id=$1', [id]))[0]!.count).toBe('0')
+    await secondDoctor('put', `/exams/${id}/report`).send({ content }).expect(403)
+    await secondDoctor('post', `/exams/${id}/report/finalize`).send({ signatureId, expectedVersion: 2, contentHash: 'a'.repeat(64) }).expect(403)
+    await f.api('get', '/exams?assignment=MINE').expect(403)
+    await f.act(id, 'reopen')
+    expect(await queueIds(doctor, 'MINE')).not.toContain(id)
+    expect(await queueIds(secondDoctor, 'UNASSIGNED')).toContain(id)
+  })
+
+  it('allows only one doctor to acquire the exam concurrently and rolls assignment back on audit failure', async () => {
+    const id = (await f.exam()).id
+    const dto = { expectedVersion: 1, reason: 'Aquisição concorrente na fila' }
+    const responses = await Promise.all([doctor('post', `/exams/${id}/workflow/start`).send(dto), secondDoctor('post', `/exams/${id}/workflow/start`).send(dto)])
+    expect(responses.map(response => response.status).sort()).toEqual([201, 409])
+    const owner = responses[0].status === 201 ? doctor : secondDoctor
+    const other = responses[0].status === 201 ? secondDoctor : doctor
+    expect(await queueIds(owner, 'MINE')).toContain(id)
+    expect(await queueIds(other, 'MINE')).not.toContain(id)
+    await f.act(id, 'cancel')
+    expect(await queueIds(owner, 'MINE')).not.toContain(id)
+
+    const failedId = (await f.exam()).id
+    const failure = jest.spyOn(f.app.get(OperationalAuditService), 'record').mockRejectedValueOnce(new Error('SYNTHETIC_ASSIGNMENT_AUDIT_FAILURE'))
+    try { await doctor('post', `/exams/${failedId}/workflow/start`).send(dto).expect(500) } finally { failure.mockRestore() }
+    expect((await f.current(failedId)).exam.reportingUserId).toBeNull()
+    expect(await queueIds(doctor, 'UNASSIGNED')).toContain(failedId)
+  })
+
+  it('keeps completed reports in the personal queue until they are sent to the hospital', async () => {
+    const id = await prepared()
+    const completed = responseBody<{ id: string }>(await finalize(id))
+    expect(await queueIds(doctor, 'MINE')).toContain(id)
+    await f.api('post', `/exams/${id}/report/send`).send({ completionId: completed.id }).expect(201)
+    expect(await queueIds(doctor, 'MINE')).not.toContain(id)
+    expect((await f.current(id)).exam.reportingUserId).toBe(doctorId)
   })
 })

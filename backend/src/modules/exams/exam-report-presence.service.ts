@@ -5,6 +5,7 @@ import type { CompanyAccessContext } from '../companies/company-context.contract
 import { OperationalAuditService } from '../companies/operational-audit.service'
 import { ExamAccessService } from './exam-access.service'
 import { WorkflowStoreService } from '../exam-workflow/workflow-store.service'
+import { assertReportEditing } from './report-assignment.policy'
 
 @Injectable()
 export class ExamReportPresenceService {
@@ -17,6 +18,7 @@ export class ExamReportPresenceService {
 
   async touch(examId: string, context: CompanyAccessContext, clientId: string) {
     await this.workflow.writable(examId, context, async (exam, manager) => {
+      assertReportEditing(exam, context)
       const repository = manager.getRepository(ExamReportPresenceEntity)
       const where = { examId, userId: context.userId, clientId }
       const existing = await repository.existsBy(where)

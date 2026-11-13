@@ -11,6 +11,7 @@ import type { ReportNode } from './exam-reports.service'
 import type { CompletedReportRow, CompletedSnapshot, FinalizeReportDto } from './report-completion.contracts'
 import { ReportDeliveryService } from './report-delivery.service'
 import { assertHospitalOriginReceived } from './report-origin.policy'
+import { assertReportEditing } from './report-assignment.policy'
 import type { PhysicianSignatureImage } from '../physicians/physician-signature.contract'
 
 @Injectable()
@@ -32,6 +33,7 @@ export class ReportCompletionService {
         return existing
       }
       this.workflow.assertMutable(exam)
+      assertReportEditing(exam, context)
       if (exam.workflowVersion !== dto.expectedVersion || exam.workflowState !== 'IN_PROGRESS')
         throw new ConflictException('Inicie a elaboração e atualize o exame antes de finalizar.')
       await assertHospitalOriginReceived(id, manager)

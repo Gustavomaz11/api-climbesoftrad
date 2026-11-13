@@ -44,6 +44,10 @@ export class ExamEntity {
   workflowState: WorkflowState
   @Column({ name: 'workflow_version', type: 'integer', default: 1 })
   workflowVersion: number
+  @Column({ name: 'reporting_user_id', type: 'uuid', nullable: true })
+  reportingUserId: string | null
+  @Column({ name: 'reporting_started_at', type: 'timestamptz', nullable: true })
+  reportingStartedAt: Date | null
   @Column({ name: 'evidence_version', type: 'integer', default: 1 })
   evidenceVersion: number
   @Column({ name: 'prepared_at', type: 'timestamptz', nullable: true })

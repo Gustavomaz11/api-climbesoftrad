@@ -9,6 +9,7 @@ import { ExamAccessService } from './exam-access.service'
 import { R2ExamReportStorage } from './r2-exam-report-storage.service'
 import { assertUploadedFileSignature } from './uploaded-file-security'
 import { WorkflowStoreService } from '../exam-workflow/workflow-store.service'
+import { assertReportEditing } from './report-assignment.policy'
 
 export interface ReportNode {
   type?: unknown
@@ -64,6 +65,7 @@ export class ExamReportsService {
     return this.workflow.writable(examId, context, async (exam, manager) => {
       const [completed] = await manager.query<unknown[]>('SELECT id FROM exam_report_completions WHERE exam_id=$1', [examId])
       if (completed) throw new ConflictException('Laudo finalizado: edição indisponível.')
+      assertReportEditing(exam, context)
       const serialized = JSON.stringify(dto.content)
       if (Buffer.byteLength(serialized, 'utf8') > 2_000_000)
         throw new PayloadTooLargeException('Laudo excede o limite permitido.')
@@ -96,6 +98,7 @@ export class ExamReportsService {
 
   async uploadImage(examId: string, file: Express.Multer.File, context: CompanyAccessContext) {
     return this.workflow.writable(examId, context, async (exam, manager) => {
+      assertReportEditing(exam, context)
       const [completed] = await manager.query<unknown[]>('SELECT id FROM exam_report_completions WHERE exam_id=$1', [examId])
       if (completed) throw new ConflictException('Laudo finalizado: edição indisponível.')
       const extension = imageExtensions[file.mimetype]

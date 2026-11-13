@@ -6,6 +6,7 @@ import { transitionRules, type WorkflowAction } from './workflow.contracts'
 import type { VersionedWorkflowDto } from './workflow.dto'
 import { WorkflowStoreService } from './workflow-store.service'
 import { assertHospitalOriginReceived } from '../exams/report-origin.policy'
+import { assertReportOwner } from '../exams/report-assignment.policy'
 
 @Injectable()
 export class ExamWorkflowService {
@@ -20,6 +21,8 @@ export class ExamWorkflowService {
       workflowState: exam.workflowState,
       workflowVersion: exam.workflowVersion,
       archivedAt: exam.archivedAt,
+      reportingUserId: exam.reportingUserId,
+      reportingStartedAt: exam.reportingStartedAt,
     }
   }
   async get(id: string, context: CompanyAccessContext) {
@@ -64,18 +67,29 @@ export class ExamWorkflowService {
       this.store.assertMutable(exam)
       const [completed] = await manager.query<unknown[]>('SELECT id FROM exam_report_completions WHERE exam_id=$1', [id])
       if (completed) throw new ConflictException('Laudo finalizado: esta ação exige um fluxo de retificação.')
-      if (!rule.from.includes(exam.workflowState))
+      const claimingLegacyReport = action === 'START' && context.role === 'DOCTOR' && exam.workflowState === 'IN_PROGRESS' && !exam.reportingUserId
+      if (!rule.from.includes(exam.workflowState) && !claimingLegacyReport)
         throw new ConflictException('Transição operacional inválida.')
       if (action === 'RELEASE')
         await this.checklist.assertComplete(exam, manager)
-      if (action === 'START') await assertHospitalOriginReceived(id, manager)
+      if (action === 'START') {
+        assertReportOwner(exam, context)
+        await assertHospitalOriginReceived(id, manager)
+        if (context.role === 'DOCTOR')
+          await manager.query(
+            'UPDATE exams SET reporting_user_id=$2,reporting_started_at=COALESCE(reporting_started_at,now()) WHERE id=$1',
+            [id, context.userId],
+          )
+      }
       if (action === 'RELEASE')
         await manager.query(
           'UPDATE exams SET prepared_at=now(),prepared_by_user_id=$2 WHERE id=$1',
           [id, context.userId],
         )
-      if (action === 'CANCEL' || action === 'REOPEN')
+      if (action === 'CANCEL' || action === 'REOPEN') {
         await manager.query('DELETE FROM exam_report_presences WHERE exam_id=$1', [id])
+        await manager.query('UPDATE exams SET reporting_user_id=NULL,reporting_started_at=NULL WHERE id=$1', [id])
+      }
       return this.store.change(
         exam,
         rule.to,
